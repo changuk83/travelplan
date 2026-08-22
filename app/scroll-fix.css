@@ -1,0 +1,9 @@
+.app-shell {
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.candidate-track {
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
