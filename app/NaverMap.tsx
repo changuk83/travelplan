@@ -17,15 +17,21 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
   const [failed, setFailed] = useState(false);
   const [path, setPath] = useState<number[][]>(fallback);
   const key = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
+  const goalPending = goal.name === "목적지 미정";
 
   useEffect(() => {
+    if (goalPending) {
+      setPath([[start.longitude, start.latitude]]);
+      onRouteData?.([]);
+      return;
+    }
     let cancelled = false;
     fetch(`${API_BASE}/api/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ waypoints: places, start, goal }) })
       .then((response) => response.json())
       .then((data: { path?: number[][]; legs?: RouteLeg[] }) => { if (!cancelled) { if (data.path?.length) setPath(data.path); onRouteData?.(data.legs ?? []); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [places, start, goal, onRouteData]);
+  }, [places, start, goal, goalPending, onRouteData]);
 
   useEffect(() => {
     if (!key || !mapRef.current) return;
@@ -44,13 +50,15 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
       overlays.current = [];
 
       const routePositions = path.map(([lng, lat]) => new maps.LatLng(lat, lng));
-      const line = new maps.Polyline({ map, path: routePositions, strokeColor: "#18aa68", strokeWeight: 7, strokeOpacity: .96, strokeLineCap: "round", strokeLineJoin: "round" });
-      overlays.current.push(line);
+      if (routePositions.length > 1) {
+        const line = new maps.Polyline({ map, path: routePositions, strokeColor: "#18aa68", strokeWeight: 7, strokeOpacity: .96, strokeLineCap: "round", strokeLineJoin: "round" });
+        overlays.current.push(line);
+      }
 
       const points = [
         { ...start, label: "S", kind: "start" },
         ...places.map((place, index) => ({ ...place, label: String(index + 1), kind: "waypoint" })),
-        { ...goal, label: "G", kind: "goal" },
+        ...(!goalPending ? [{ ...goal, label: "G", kind: "goal" }] : []),
       ];
       const bounds = new maps.LatLngBounds();
       routePositions.forEach((position) => bounds.extend(position));
@@ -77,7 +85,7 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
     script.onload = draw;
     script.onerror = () => setFailed(true);
     document.head.appendChild(script);
-  }, [key, path, places, start, goal]);
+  }, [key, path, places, start, goal, goalPending]);
 
   if (!key || failed) return <div className="map-canvas"><div className="sea">동해</div><div className="road road-a"/><div className="road road-b"/><div className="route-path"/><span className="route-marker marker-start">출발</span><span className="route-marker marker-rest">쉼</span><span className="route-marker marker-goal">도착</span></div>;
   return <div className="real-map"><div ref={mapRef} className="naver-map"/><div className="map-legend"><span><i className="legend-s">S</i>출발</span><span><i>1</i>경유지</span><span><i className="legend-g">G</i>도착</span></div></div>;
