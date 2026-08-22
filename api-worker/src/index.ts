@@ -1,10 +1,18 @@
 type Env = {
   DB: D1Database;
+  SEARCH_RATE_LIMITER: RateLimiter;
+  ROUTE_RATE_LIMITER: RateLimiter;
+  STATE_READ_RATE_LIMITER: RateLimiter;
+  STATE_WRITE_RATE_LIMITER: RateLimiter;
   ALLOWED_ORIGINS: string;
   NEXT_PUBLIC_NAVER_MAP_CLIENT_ID: string;
   NAVER_MAP_CLIENT_SECRET: string;
   NAVER_SEARCH_CLIENT_ID: string;
   NAVER_SEARCH_CLIENT_SECRET: string;
+};
+
+type RateLimiter = {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 };
 
 type Place = { id:string; name:string; category:string; address:string; longitude:number; latitude:number; link?:string };
@@ -17,6 +25,15 @@ const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.strin
 const clean = (value = "") => value.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
 const coordinate = (value?: string) => { const n = Number(value); return Math.abs(n) > 180 ? n / 10_000_000 : n; };
 const validDevice = (value: string | null) => value && /^[a-zA-Z0-9_-]{8,80}$/.test(value) ? value : null;
+
+async function enforceRateLimit(request: Request, limiter: RateLimiter) {
+  const clientIp = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const { success } = await limiter.limit({ key: clientIp });
+  return success ? null : json(
+    { error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." },
+    { status: 429, headers: { "retry-after": "60" } },
+  );
+}
 
 function cors(request: Request, env: Env) {
   const origin = request.headers.get("origin") ?? "";
@@ -85,4 +102,4 @@ async function putState(deviceId:string, request:Request, env:Env) {
   await env.DB.batch(statements);return json({ok:true,updatedAt:now});
 }
 
-export default {async fetch(request:Request,env:Env){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=await directions(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));response=!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405});}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
+export default {async fetch(request:Request,env:Env){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await directions(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=(await enforceRateLimit(request,env.SEARCH_RATE_LIMITER))??await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));const limiter=request.method==="GET"?env.STATE_READ_RATE_LIMITER:request.method==="PUT"?env.STATE_WRITE_RATE_LIMITER:null;const blocked=limiter?await enforceRateLimit(request,limiter):null;response=blocked??(!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405}));}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
