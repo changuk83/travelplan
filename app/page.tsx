@@ -70,6 +70,8 @@ export default function Home() {
   useEffect(()=>{document.documentElement.classList.toggle("inserting-place",insertIndex!==null);return()=>document.documentElement.classList.remove("inserting-place")},[insertIndex]);
   useEffect(()=>{if(previousTab.current==="saved"&&tab==="map"){setSavedSearchOpen(true);setResults([]);setSearchError("");setQuery("");setTab("saved");previousTab.current="saved";return}if(tab!=="saved")setSavedSearchOpen(false);previousTab.current=tab},[tab]);
   useEffect(()=>{document.documentElement.classList.toggle("saved-searching",savedSearchOpen);return()=>document.documentElement.classList.remove("saved-searching")},[savedSearchOpen]);
+  useEffect(()=>{if(tab!=="map"||!choosingPlace)return;requestAnimationFrame(()=>{window.scrollTo({top:0,left:0,behavior:"auto"});document.querySelector<HTMLInputElement>(".map-page .place-search input")?.focus({preventScroll:true})})},[tab,choosingPlace]);
+  useEffect(()=>{if(!savedSearchOpen)return;requestAnimationFrame(()=>{window.scrollTo({top:0,left:0,behavior:"auto"});document.querySelector<HTMLElement>(".saved-page")?.scrollTo({top:0,left:0,behavior:"auto"});document.querySelector<HTMLInputElement>(".saved-inline-search input")?.focus({preventScroll:true})})},[savedSearchOpen]);
 
   function setPlaces(update:Place[]|((items:Place[])=>Place[])){setDays((items)=>items.map((day)=>day.id===activeDayId?{...day,places:typeof update==="function"?update(day.places):update}:day))}
   function selectDay(id:string){setActiveDayId(id);setLegs([]);setInsertIndex(null);setCandidateFor(null);setEndpointTarget(null);setResults([]);setSearchError("")}
