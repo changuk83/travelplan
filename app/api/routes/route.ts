@@ -1,19 +1,23 @@
-export async function POST(request: Request) {
-  const { waypoints = [], start, goal } = await request.json() as { waypoints?: Array<{ longitude: number; latitude: number }>; start?: { longitude: number; latitude: number }; goal?: { longitude: number; latitude: number } };
-  const id = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
-  const secret = process.env.NAVER_MAP_CLIENT_SECRET;
-  if (!id || !secret) return Response.json({ error: "지도 API 키가 설정되지 않았습니다." }, { status: 500 });
-  const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
-  url.searchParams.set("start", `${start?.longitude ?? 127.095},${start?.latitude ?? 37.322}`); url.searchParams.set("goal", `${goal?.longitude ?? 128.467},${goal?.latitude ?? 38.378}`); url.searchParams.set("option", "traoptimal");
-  if (waypoints.length) url.searchParams.set("waypoints", waypoints.slice(0, 5).map((point) => `${point.longitude},${point.latitude}`).join("|"));
-  const response = await fetch(url, { headers: { "x-ncp-apigw-api-key-id": id, "x-ncp-apigw-api-key": secret, Accept: "application/json" } });
-  const data = await response.json() as { route?: { traoptimal?: Array<{ path?: number[][]; summary?: { distance?: number; duration?: number }; guide?: Array<{ type?: number; distance?: number; duration?: number }> }> }; message?: string };
-  if (!response.ok) return Response.json({ error: data.message || "경로를 계산하지 못했습니다." }, { status: response.status });
-  const route = data.route?.traoptimal?.[0];
+type Point = { longitude: number; latitude: number };
+type NaverRoute = { path?: number[][]; summary?: { distance?: number; duration?: number }; guide?: Array<{ type?: number; distance?: number; duration?: number }> };
+
+const MAX_WAYPOINTS = 30;
+const WAYPOINTS_PER_REQUEST = 5;
+
+function splitRoute(start: Point, waypoints: Point[], goal: Point) {
+  const points = [start, ...waypoints, goal];
+  const chunks: Point[][] = [];
+  for (let index = 0; index < points.length - 1; index += WAYPOINTS_PER_REQUEST + 1) {
+    chunks.push(points.slice(index, Math.min(index + WAYPOINTS_PER_REQUEST + 2, points.length)));
+  }
+  return chunks;
+}
+
+function routeLegs(route: NaverRoute) {
   const legs: Array<{ distance: number; duration: number }> = [];
   let distance = 0;
   let duration = 0;
-  for (const guide of route?.guide ?? []) {
+  for (const guide of route.guide ?? []) {
     distance += guide.distance ?? 0;
     duration += guide.duration ?? 0;
     if (guide.type === 87 || guide.type === 88) {
@@ -22,5 +26,43 @@ export async function POST(request: Request) {
       duration = 0;
     }
   }
-  return Response.json({ path: route?.path ?? [], summary: route?.summary ?? null, legs });
+  if (distance || duration) legs.push({ distance, duration });
+  return legs;
+}
+
+export async function POST(request: Request) {
+  const { waypoints = [], start, goal } = await request.json() as { waypoints?: Point[]; start?: Point; goal?: Point };
+  const id = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
+  const secret = process.env.NAVER_MAP_CLIENT_SECRET;
+  if (!id || !secret) return Response.json({ error: "지도 API 키가 설정되지 않았습니다." }, { status: 500 });
+  if (waypoints.length > MAX_WAYPOINTS) return Response.json({ error: `경유지는 최대 ${MAX_WAYPOINTS}곳까지 추가할 수 있습니다.` }, { status: 400 });
+  const routeStart = start ?? { longitude: 127.095, latitude: 37.322 };
+  const routeGoal = goal ?? { longitude: 128.467, latitude: 38.378 };
+  try {
+    const responses = await Promise.all(splitRoute(routeStart, waypoints, routeGoal).map(async (points) => {
+      const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
+      url.searchParams.set("start", `${points[0].longitude},${points[0].latitude}`);
+      url.searchParams.set("goal", `${points.at(-1)!.longitude},${points.at(-1)!.latitude}`);
+      url.searchParams.set("option", "traoptimal");
+      const intermediates = points.slice(1, -1);
+      if (intermediates.length) url.searchParams.set("waypoints", intermediates.map((point) => `${point.longitude},${point.latitude}`).join("|"));
+      const response = await fetch(url, { headers: { "x-ncp-apigw-api-key-id": id, "x-ncp-apigw-api-key": secret, Accept: "application/json" } });
+      const data = await response.json() as { route?: { traoptimal?: NaverRoute[] }; message?: string };
+      if (!response.ok) throw new Error(data.message || "경로를 계산하지 못했습니다.");
+      return data.route?.traoptimal?.[0];
+    }));
+    const path: number[][] = [];
+    const legs: Array<{ distance: number; duration: number }> = [];
+    let distance = 0;
+    let duration = 0;
+    responses.forEach((route, index) => {
+      path.push(...(index ? route?.path?.slice(1) ?? [] : route?.path ?? []));
+      legs.push(...routeLegs(route ?? {}));
+      distance += route?.summary?.distance ?? 0;
+      duration += route?.summary?.duration ?? 0;
+    });
+    return Response.json({ path, summary: { distance, duration }, legs });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "경로를 계산하지 못했습니다." }, { status: 502 });
+  }
 }

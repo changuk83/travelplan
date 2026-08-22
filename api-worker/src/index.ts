@@ -15,7 +15,7 @@ type RateLimiter = {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 };
 
-type Place = { id:string; name:string; category:string; address:string; longitude:number; latitude:number; link?:string; memo?:string; savedCategory?:string };
+type Place = { id:string; name:string; category:string; address:string; longitude:number; latitude:number; link?:string; memo?:string; savedCategory?:string; savedCategories?:string[] };
 type Day = { id:string; label:string; date:string; start:{name:string;longitude:number;latitude:number}; goal:{name:string;longitude:number;latitude:number}; places:Place[]; candidates?:Record<string,Place[]> };
 type Trip = { id:string; title:string; days:Day[]; updatedAt:number };
 
@@ -44,18 +44,25 @@ function cors(request: Request, env: Env) {
 async function directions(request: Request, env: Env) {
   const { waypoints = [], start, goal } = await request.json() as { waypoints?:Place[]; start?:Place; goal?:Place };
   if (!env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID || !env.NAVER_MAP_CLIENT_SECRET) return json({error:"지도 API 키가 설정되지 않았습니다."},{status:500});
-  const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
-  url.searchParams.set("start", `${start?.longitude ?? 127.095},${start?.latitude ?? 37.322}`);
-  url.searchParams.set("goal", `${goal?.longitude ?? 128.467},${goal?.latitude ?? 38.378}`);
-  url.searchParams.set("option", "traoptimal");
-  if (waypoints.length) url.searchParams.set("waypoints", waypoints.slice(0,5).map((p)=>`${p.longitude},${p.latitude}`).join("|"));
-  const response = await fetch(url,{headers:{"x-ncp-apigw-api-key-id":env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID,"x-ncp-apigw-api-key":env.NAVER_MAP_CLIENT_SECRET,accept:"application/json"}});
-  const data = await response.json() as any;
-  if (!response.ok) return json({error:data.message||"경로를 계산하지 못했습니다."},{status:response.status});
-  const route = data.route?.traoptimal?.[0];
-  const legs:{distance:number;duration:number}[]=[]; let distance=0; let duration=0;
-  for(const guide of route?.guide??[]){distance+=guide.distance??0;duration+=guide.duration??0;if(guide.type===87||guide.type===88){legs.push({distance,duration});distance=0;duration=0;}}
-  return json({path:route?.path??[],summary:route?.summary??null,legs});
+  if (waypoints.length > 30) return json({error:"경유지는 최대 30곳까지 추가할 수 있습니다."},{status:400});
+  const points = [start ?? {longitude:127.095,latitude:37.322}, ...waypoints, goal ?? {longitude:128.467,latitude:38.378}];
+  const chunks:Place[][]=[];
+  for(let index=0;index<points.length-1;index+=6)chunks.push(points.slice(index,Math.min(index+7,points.length)) as Place[]);
+  const routes=await Promise.all(chunks.map(async(points)=>{
+    const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
+    url.searchParams.set("start",`${points[0].longitude},${points[0].latitude}`);
+    url.searchParams.set("goal",`${points.at(-1)!.longitude},${points.at(-1)!.latitude}`);
+    url.searchParams.set("option","traoptimal");
+    const intermediates=points.slice(1,-1);
+    if(intermediates.length)url.searchParams.set("waypoints",intermediates.map((p)=>`${p.longitude},${p.latitude}`).join("|"));
+    const response=await fetch(url,{headers:{"x-ncp-apigw-api-key-id":env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID,"x-ncp-apigw-api-key":env.NAVER_MAP_CLIENT_SECRET,accept:"application/json"}});
+    const data=await response.json() as any;
+    if(!response.ok)throw new Error(data.message||"경로를 계산하지 못했습니다.");
+    return data.route?.traoptimal?.[0];
+  }));
+  const path:number[][]=[];const legs:{distance:number;duration:number}[]=[];let totalDistance=0;let totalDuration=0;
+  routes.forEach((route,index)=>{path.push(...(index?(route?.path??[]).slice(1):route?.path??[]));let distance=0;let duration=0;for(const guide of route?.guide??[]){distance+=guide.distance??0;duration+=guide.duration??0;if(guide.type===87||guide.type===88){legs.push({distance,duration});distance=0;duration=0;}}if(distance||duration)legs.push({distance,duration});totalDistance+=route?.summary?.distance??0;totalDuration+=route?.summary?.duration??0;});
+  return json({path,summary:{distance:totalDistance,duration:totalDuration},legs});
 }
 
 async function search(request: Request, env: Env) {
@@ -80,7 +87,7 @@ async function getState(deviceId:string, env:Env) {
     env.DB.prepare("SELECT * FROM saved_places WHERE user_id=? ORDER BY position").bind(userId),
     env.DB.prepare("SELECT * FROM saved_categories WHERE user_id=? ORDER BY position").bind(userId),
   ]);
-  const place = (row:any):Place=>({id:row.place_id,name:row.name,category:row.category,address:row.address,longitude:row.longitude,latitude:row.latitude,...(row.link?{link:row.link}:{}),...(row.memo?{memo:row.memo}:{}),...(row.saved_category?{savedCategory:row.saved_category}:{})});
+  const place = (row:any):Place=>{let savedCategories:string[]|undefined;if(row.saved_category){try{const parsed=JSON.parse(row.saved_category);savedCategories=Array.isArray(parsed)?parsed:[row.saved_category]}catch{savedCategories=[row.saved_category]}}return {id:row.place_id,name:row.name,category:row.category,address:row.address,longitude:row.longitude,latitude:row.latitude,...(row.link?{link:row.link}:{}),...(row.memo?{memo:row.memo}:{}),...(savedCategories?.length?{savedCategories}:{})}};
   const candidatesByStop=new Map<string,Place[]>();for(const row of candidateRows.results as any[]){const list=candidatesByStop.get(row.stop_id)??[];list.push(place(row));candidatesByStop.set(row.stop_id,list);}
   const stopsByDay=new Map<string,Array<{row:any;place:Place}>>();for(const row of stopRows.results as any[]){const list=stopsByDay.get(row.day_id)??[];list.push({row,place:place(row)});stopsByDay.set(row.day_id,list);}
   const daysByTrip=new Map<string,Day[]>();for(const row of dayRows.results as any[]){const stopList=stopsByDay.get(row.id)??[];const candidates:Record<string,Place[]>={};for(const stop of stopList){const list=candidatesByStop.get(stop.row.id);if(list?.length)candidates[stop.place.id]=list;}const day:Day={id:row.id,label:row.label,date:row.date_label,start:{name:row.start_name,longitude:row.start_longitude,latitude:row.start_latitude},goal:{name:row.goal_name,longitude:row.goal_longitude,latitude:row.goal_latitude},places:stopList.map((item)=>item.place),...(Object.keys(candidates).length?{candidates}:{})};const list=daysByTrip.get(row.trip_id)??[];list.push(day);daysByTrip.set(row.trip_id,list);}
@@ -99,8 +106,8 @@ async function putState(deviceId:string, request:Request, env:Env) {
     env.DB.prepare("DELETE FROM trips WHERE user_id=?").bind(userId),env.DB.prepare("DELETE FROM saved_places WHERE user_id=?").bind(userId),env.DB.prepare("DELETE FROM saved_categories WHERE user_id=?").bind(userId)
   ];
   for(let ti=0;ti<trips.length;ti++){const trip=trips[ti];statements.push(env.DB.prepare("INSERT INTO trips(id,device_id,user_id,title,position,updated_at) VALUES(?,?,?,?,?,?)").bind(trip.id,deviceId,userId,trip.title,ti,trip.updatedAt||now));for(let di=0;di<trip.days.length;di++){const day=trip.days[di];statements.push(env.DB.prepare("INSERT INTO trip_days(id,trip_id,label,date_label,position,start_name,start_longitude,start_latitude,goal_name,goal_longitude,goal_latitude) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(day.id,trip.id,day.label,day.date,di,day.start.name,day.start.longitude,day.start.latitude,day.goal.name,day.goal.longitude,day.goal.latitude));for(let si=0;si<day.places.length;si++){const p=day.places[si];const stopId=`${day.id}:${p.id}`;statements.push(env.DB.prepare("INSERT INTO stops(id,day_id,place_id,position,name,category,address,longitude,latitude,link,memo) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(stopId,day.id,p.id,si,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null,p.memo??null));for(let ci=0;ci<(day.candidates?.[p.id]??[]).length;ci++){const c=day.candidates![p.id][ci];statements.push(env.DB.prepare("INSERT INTO stop_candidates(id,stop_id,place_id,position,name,category,address,longitude,latitude,link,memo) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(`${stopId}:${c.id}`,stopId,c.id,ci,c.name,c.category,c.address,c.longitude,c.latitude,c.link??null,c.memo??null));}}}}
-  for(let i=0;i<saved.length;i++){const p=saved[i];statements.push(env.DB.prepare("INSERT INTO saved_places(id,device_id,user_id,place_id,position,name,category,address,longitude,latitude,link,memo,saved_category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${deviceId}:${p.id}`,deviceId,userId,p.id,i,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null,p.memo??null,p.savedCategory??null));}
-  for(let i=0;i<categories.length;i++){const name=categories[i].trim().slice(0,12);if(name)statements.push(env.DB.prepare("INSERT INTO saved_categories(id,user_id,name,position) VALUES(?,?,?,?)").bind(`${userId}:${i}`,userId,name,i));}
+  for(let i=0;i<saved.length;i++){const p=saved[i];const placeCategories=p.savedCategories?.length?p.savedCategories:p.savedCategory?[p.savedCategory]:[];statements.push(env.DB.prepare("INSERT INTO saved_places(id,device_id,user_id,place_id,position,name,category,address,longitude,latitude,link,memo,saved_category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${deviceId}:${p.id}`,deviceId,userId,p.id,i,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null,p.memo??null,placeCategories.length?JSON.stringify([...new Set(placeCategories)]):null));}
+  for(let i=0;i<categories.length;i++){const name=categories[i].trim().slice(0,40);if(name)statements.push(env.DB.prepare("INSERT INTO saved_categories(id,user_id,name,position) VALUES(?,?,?,?)").bind(`${userId}:${i}`,userId,name,i));}
   await env.DB.batch(statements);return json({ok:true,updatedAt:now});
 }
 
