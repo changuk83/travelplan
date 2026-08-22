@@ -68,12 +68,21 @@ async function directions(request: Request, env: Env) {
 async function search(request: Request, env: Env) {
   const q = new URL(request.url).searchParams.get("q")?.trim();
   if (!q || q.length < 2) return json({error:"두 글자 이상 입력해 주세요."},{status:400});
-  const url = new URL("https://naverapihub.apigw.ntruss.com/search/v1/local");
-  url.searchParams.set("query",q);url.searchParams.set("display","5");url.searchParams.set("format","json");
-  const response = await fetch(url,{headers:{"X-NCP-APIGW-API-KEY-ID":env.NAVER_SEARCH_CLIENT_ID,"X-NCP-APIGW-API-KEY":env.NAVER_SEARCH_CLIENT_SECRET}});
-  const data = await response.json() as any;
-  if(!response.ok)return json({error:data.message||`지역 검색 실패 (${response.status})`},{status:response.status});
-  return json({source:"local",places:(data.items??[]).map((item:any,index:number)=>({id:`local-${index}-${item.mapx}`,name:clean(item.title),category:clean(item.category),address:item.roadAddress||item.address||"",longitude:coordinate(item.mapx),latitude:coordinate(item.mapy),link:item.link||""}))});
+  const localUrl = new URL("https://naverapihub.apigw.ntruss.com/search/v1/local");
+  localUrl.searchParams.set("query",q);localUrl.searchParams.set("display","5");localUrl.searchParams.set("format","json");
+  const localResponse = await fetch(localUrl,{headers:{"X-NCP-APIGW-API-KEY-ID":env.NAVER_SEARCH_CLIENT_ID,"X-NCP-APIGW-API-KEY":env.NAVER_SEARCH_CLIENT_SECRET}});
+  const localData = await localResponse.json() as any;
+  if(!localResponse.ok)return json({error:localData.message||`지역 검색 실패 (${localResponse.status})`},{status:localResponse.status});
+  const localPlaces=(localData.items??[]).map((item:any,index:number)=>({id:`local-${index}-${item.mapx}`,name:clean(item.title),category:clean(item.category),address:item.roadAddress||item.address||"",longitude:coordinate(item.mapx),latitude:coordinate(item.mapy),link:item.link||""}));
+  if(localPlaces.length)return json({source:"local",places:localPlaces});
+
+  if(!env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID||!env.NAVER_MAP_CLIENT_SECRET)return json({error:"주소 검색용 지도 API 키가 설정되지 않았습니다."},{status:500});
+  const geocodeUrl=new URL("https://maps.apigw.ntruss.com/map-geocode/v2/geocode");
+  geocodeUrl.searchParams.set("query",q);geocodeUrl.searchParams.set("count","5");
+  const geocodeResponse=await fetch(geocodeUrl,{headers:{"x-ncp-apigw-api-key-id":env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID,"x-ncp-apigw-api-key":env.NAVER_MAP_CLIENT_SECRET,accept:"application/json"}});
+  const geocodeData=await geocodeResponse.json() as any;
+  if(!geocodeResponse.ok)return json({error:geocodeData.errorMessage||geocodeData.message||`주소 검색 실패 (${geocodeResponse.status})`},{status:geocodeResponse.status});
+  return json({source:"geocoding",places:(geocodeData.addresses??[]).map((item:any,index:number)=>({id:`address-${index}-${item.x}`,name:item.roadAddress||item.jibunAddress||q,category:"주소",address:item.jibunAddress||item.roadAddress||"",longitude:Number(item.x),latitude:Number(item.y),link:""}))});
 }
 
 async function getState(deviceId:string, env:Env) {

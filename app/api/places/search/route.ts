@@ -25,7 +25,8 @@ export async function GET(request: Request) {
       const response = await fetch(url, { headers: { "X-NCP-APIGW-API-KEY-ID": hubId, "X-NCP-APIGW-API-KEY": hubSecret } });
       if (!response.ok) throw new Error(`지역 검색 실패 (${response.status})`);
       const data = await response.json() as { items?: SearchItem[] };
-      return Response.json({ source: "local", places: (data.items ?? []).map((item, index) => ({ id: `local-${index}-${item.mapx}`, name: clean(item.title), category: clean(item.category), address: item.roadAddress || item.address || "", longitude: coordinate(item.mapx), latitude: coordinate(item.mapy), link: item.link || "" })) });
+      const places = (data.items ?? []).map((item, index) => ({ id: `local-${index}-${item.mapx}`, name: clean(item.title), category: clean(item.category), address: item.roadAddress || item.address || "", longitude: coordinate(item.mapx), latitude: coordinate(item.mapy), link: item.link || "" }));
+      if (places.length) return Response.json({ source: "local", places });
     }
 
     if (!mapId || !mapSecret) return Response.json({ error: "지도 API 키가 설정되지 않았습니다." }, { status: 500 });
