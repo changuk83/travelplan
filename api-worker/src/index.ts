@@ -1,0 +1,88 @@
+type Env = {
+  DB: D1Database;
+  ALLOWED_ORIGINS: string;
+  NEXT_PUBLIC_NAVER_MAP_CLIENT_ID: string;
+  NAVER_MAP_CLIENT_SECRET: string;
+  NAVER_SEARCH_CLIENT_ID: string;
+  NAVER_SEARCH_CLIENT_SECRET: string;
+};
+
+type Place = { id:string; name:string; category:string; address:string; longitude:number; latitude:number; link?:string };
+type Day = { id:string; label:string; date:string; start:{name:string;longitude:number;latitude:number}; goal:{name:string;longitude:number;latitude:number}; places:Place[]; candidates?:Record<string,Place[]> };
+type Trip = { id:string; title:string; days:Day[]; updatedAt:number };
+
+const DEFAULT_USER_ID = "1";
+
+const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });
+const clean = (value = "") => value.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
+const coordinate = (value?: string) => { const n = Number(value); return Math.abs(n) > 180 ? n / 10_000_000 : n; };
+const validDevice = (value: string | null) => value && /^[a-zA-Z0-9_-]{8,80}$/.test(value) ? value : null;
+
+function cors(request: Request, env: Env) {
+  const origin = request.headers.get("origin") ?? "";
+  const allowed = env.ALLOWED_ORIGINS.split(",").map((item) => item.trim());
+  return allowed.includes(origin) ? { "access-control-allow-origin": origin, "access-control-allow-methods": "GET,PUT,POST,OPTIONS", "access-control-allow-headers": "content-type,x-gildam-device", vary: "Origin" } : {};
+}
+
+async function directions(request: Request, env: Env) {
+  const { waypoints = [], start, goal } = await request.json() as { waypoints?:Place[]; start?:Place; goal?:Place };
+  if (!env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID || !env.NAVER_MAP_CLIENT_SECRET) return json({error:"지도 API 키가 설정되지 않았습니다."},{status:500});
+  const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
+  url.searchParams.set("start", `${start?.longitude ?? 127.095},${start?.latitude ?? 37.322}`);
+  url.searchParams.set("goal", `${goal?.longitude ?? 128.467},${goal?.latitude ?? 38.378}`);
+  url.searchParams.set("option", "traoptimal");
+  if (waypoints.length) url.searchParams.set("waypoints", waypoints.slice(0,5).map((p)=>`${p.longitude},${p.latitude}`).join("|"));
+  const response = await fetch(url,{headers:{"x-ncp-apigw-api-key-id":env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID,"x-ncp-apigw-api-key":env.NAVER_MAP_CLIENT_SECRET,accept:"application/json"}});
+  const data = await response.json() as any;
+  if (!response.ok) return json({error:data.message||"경로를 계산하지 못했습니다."},{status:response.status});
+  const route = data.route?.traoptimal?.[0];
+  const legs:{distance:number;duration:number}[]=[]; let distance=0; let duration=0;
+  for(const guide of route?.guide??[]){distance+=guide.distance??0;duration+=guide.duration??0;if(guide.type===87||guide.type===88){legs.push({distance,duration});distance=0;duration=0;}}
+  return json({path:route?.path??[],summary:route?.summary??null,legs});
+}
+
+async function search(request: Request, env: Env) {
+  const q = new URL(request.url).searchParams.get("q")?.trim();
+  if (!q || q.length < 2) return json({error:"두 글자 이상 입력해 주세요."},{status:400});
+  const url = new URL("https://naverapihub.apigw.ntruss.com/search/v1/local");
+  url.searchParams.set("query",q);url.searchParams.set("display","5");url.searchParams.set("format","json");
+  const response = await fetch(url,{headers:{"X-NCP-APIGW-API-KEY-ID":env.NAVER_SEARCH_CLIENT_ID,"X-NCP-APIGW-API-KEY":env.NAVER_SEARCH_CLIENT_SECRET}});
+  const data = await response.json() as any;
+  if(!response.ok)return json({error:data.message||`지역 검색 실패 (${response.status})`},{status:response.status});
+  return json({source:"local",places:(data.items??[]).map((item:any,index:number)=>({id:`local-${index}-${item.mapx}`,name:clean(item.title),category:clean(item.category),address:item.roadAddress||item.address||"",longitude:coordinate(item.mapx),latitude:coordinate(item.mapy),link:item.link||""}))});
+}
+
+async function getState(deviceId:string, env:Env) {
+  void deviceId;
+  const userId=DEFAULT_USER_ID;
+  const [tripRows,dayRows,stopRows,candidateRows,savedRows]=await env.DB.batch([
+    env.DB.prepare("SELECT * FROM trips WHERE user_id=? ORDER BY position").bind(userId),
+    env.DB.prepare("SELECT d.* FROM trip_days d JOIN trips t ON t.id=d.trip_id WHERE t.user_id=? ORDER BY d.position").bind(userId),
+    env.DB.prepare("SELECT s.* FROM stops s JOIN trip_days d ON d.id=s.day_id JOIN trips t ON t.id=d.trip_id WHERE t.user_id=? ORDER BY s.position").bind(userId),
+    env.DB.prepare("SELECT c.* FROM stop_candidates c JOIN stops s ON s.id=c.stop_id JOIN trip_days d ON d.id=s.day_id JOIN trips t ON t.id=d.trip_id WHERE t.user_id=? ORDER BY c.position").bind(userId),
+    env.DB.prepare("SELECT * FROM saved_places WHERE user_id=? ORDER BY position").bind(userId),
+  ]);
+  const place = (row:any):Place=>({id:row.place_id,name:row.name,category:row.category,address:row.address,longitude:row.longitude,latitude:row.latitude,...(row.link?{link:row.link}:{})});
+  const candidatesByStop=new Map<string,Place[]>();for(const row of candidateRows.results as any[]){const list=candidatesByStop.get(row.stop_id)??[];list.push(place(row));candidatesByStop.set(row.stop_id,list);}
+  const stopsByDay=new Map<string,Array<{row:any;place:Place}>>();for(const row of stopRows.results as any[]){const list=stopsByDay.get(row.day_id)??[];list.push({row,place:place(row)});stopsByDay.set(row.day_id,list);}
+  const daysByTrip=new Map<string,Day[]>();for(const row of dayRows.results as any[]){const stopList=stopsByDay.get(row.id)??[];const candidates:Record<string,Place[]>={};for(const stop of stopList){const list=candidatesByStop.get(stop.row.id);if(list?.length)candidates[stop.place.id]=list;}const day:Day={id:row.id,label:row.label,date:row.date_label,start:{name:row.start_name,longitude:row.start_longitude,latitude:row.start_latitude},goal:{name:row.goal_name,longitude:row.goal_longitude,latitude:row.goal_latitude},places:stopList.map((item)=>item.place),...(Object.keys(candidates).length?{candidates}:{})};const list=daysByTrip.get(row.trip_id)??[];list.push(day);daysByTrip.set(row.trip_id,list);}
+  const trips=(tripRows.results as any[]).map((row)=>({id:row.id,title:row.title,days:daysByTrip.get(row.id)??[],updatedAt:row.updated_at}));
+  return json({trips,savedPlaces:(savedRows.results as any[]).map(place)});
+}
+
+async function putState(deviceId:string, request:Request, env:Env) {
+  const body=await request.json() as {trips?:Trip[];savedPlaces?:Place[]};const trips=body.trips??[];const saved=body.savedPlaces??[];const now=Date.now();
+  if(trips.length>30||saved.length>500)return json({error:"저장 가능한 데이터 범위를 초과했습니다."},{status:400});
+  const userId=DEFAULT_USER_ID;
+  const statements=[
+    env.DB.prepare("INSERT INTO devices(id,created_at,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at").bind(deviceId,now,now),
+    env.DB.prepare("INSERT INTO users(id,display_name,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at").bind(userId,"기본 사용자",now,now),
+    env.DB.prepare("INSERT INTO user_devices(device_id,user_id,linked_at) VALUES(?,?,?) ON CONFLICT(device_id) DO UPDATE SET user_id=excluded.user_id").bind(deviceId,userId,now),
+    env.DB.prepare("DELETE FROM trips WHERE user_id=?").bind(userId),env.DB.prepare("DELETE FROM saved_places WHERE user_id=?").bind(userId)
+  ];
+  for(let ti=0;ti<trips.length;ti++){const trip=trips[ti];statements.push(env.DB.prepare("INSERT INTO trips(id,device_id,user_id,title,position,updated_at) VALUES(?,?,?,?,?,?)").bind(trip.id,deviceId,userId,trip.title,ti,trip.updatedAt||now));for(let di=0;di<trip.days.length;di++){const day=trip.days[di];statements.push(env.DB.prepare("INSERT INTO trip_days(id,trip_id,label,date_label,position,start_name,start_longitude,start_latitude,goal_name,goal_longitude,goal_latitude) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(day.id,trip.id,day.label,day.date,di,day.start.name,day.start.longitude,day.start.latitude,day.goal.name,day.goal.longitude,day.goal.latitude));for(let si=0;si<day.places.length;si++){const p=day.places[si];const stopId=`${day.id}:${p.id}`;statements.push(env.DB.prepare("INSERT INTO stops(id,day_id,place_id,position,name,category,address,longitude,latitude,link) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(stopId,day.id,p.id,si,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null));for(let ci=0;ci<(day.candidates?.[p.id]??[]).length;ci++){const c=day.candidates![p.id][ci];statements.push(env.DB.prepare("INSERT INTO stop_candidates(id,stop_id,place_id,position,name,category,address,longitude,latitude,link) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(`${stopId}:${c.id}`,stopId,c.id,ci,c.name,c.category,c.address,c.longitude,c.latitude,c.link??null));}}}}
+  for(let i=0;i<saved.length;i++){const p=saved[i];statements.push(env.DB.prepare("INSERT INTO saved_places(id,device_id,user_id,place_id,position,name,category,address,longitude,latitude,link) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(`${deviceId}:${p.id}`,deviceId,userId,p.id,i,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null));}
+  await env.DB.batch(statements);return json({ok:true,updatedAt:now});
+}
+
+export default {async fetch(request:Request,env:Env){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=await directions(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));response=!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405});}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
