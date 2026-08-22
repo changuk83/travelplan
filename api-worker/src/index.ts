@@ -15,7 +15,7 @@ type RateLimiter = {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 };
 
-type Place = { id:string; name:string; category:string; address:string; longitude:number; latitude:number; link?:string };
+type Place = { id:string; name:string; category:string; address:string; longitude:number; latitude:number; link?:string; memo?:string; savedCategory?:string };
 type Day = { id:string; label:string; date:string; start:{name:string;longitude:number;latitude:number}; goal:{name:string;longitude:number;latitude:number}; places:Place[]; candidates?:Record<string,Place[]> };
 type Trip = { id:string; title:string; days:Day[]; updatedAt:number };
 
@@ -72,33 +72,35 @@ async function search(request: Request, env: Env) {
 async function getState(deviceId:string, env:Env) {
   void deviceId;
   const userId=DEFAULT_USER_ID;
-  const [tripRows,dayRows,stopRows,candidateRows,savedRows]=await env.DB.batch([
+  const [tripRows,dayRows,stopRows,candidateRows,savedRows,categoryRows]=await env.DB.batch([
     env.DB.prepare("SELECT * FROM trips WHERE user_id=? ORDER BY position").bind(userId),
     env.DB.prepare("SELECT d.* FROM trip_days d JOIN trips t ON t.id=d.trip_id WHERE t.user_id=? ORDER BY d.position").bind(userId),
     env.DB.prepare("SELECT s.* FROM stops s JOIN trip_days d ON d.id=s.day_id JOIN trips t ON t.id=d.trip_id WHERE t.user_id=? ORDER BY s.position").bind(userId),
     env.DB.prepare("SELECT c.* FROM stop_candidates c JOIN stops s ON s.id=c.stop_id JOIN trip_days d ON d.id=s.day_id JOIN trips t ON t.id=d.trip_id WHERE t.user_id=? ORDER BY c.position").bind(userId),
     env.DB.prepare("SELECT * FROM saved_places WHERE user_id=? ORDER BY position").bind(userId),
+    env.DB.prepare("SELECT * FROM saved_categories WHERE user_id=? ORDER BY position").bind(userId),
   ]);
-  const place = (row:any):Place=>({id:row.place_id,name:row.name,category:row.category,address:row.address,longitude:row.longitude,latitude:row.latitude,...(row.link?{link:row.link}:{})});
+  const place = (row:any):Place=>({id:row.place_id,name:row.name,category:row.category,address:row.address,longitude:row.longitude,latitude:row.latitude,...(row.link?{link:row.link}:{}),...(row.memo?{memo:row.memo}:{}),...(row.saved_category?{savedCategory:row.saved_category}:{})});
   const candidatesByStop=new Map<string,Place[]>();for(const row of candidateRows.results as any[]){const list=candidatesByStop.get(row.stop_id)??[];list.push(place(row));candidatesByStop.set(row.stop_id,list);}
   const stopsByDay=new Map<string,Array<{row:any;place:Place}>>();for(const row of stopRows.results as any[]){const list=stopsByDay.get(row.day_id)??[];list.push({row,place:place(row)});stopsByDay.set(row.day_id,list);}
   const daysByTrip=new Map<string,Day[]>();for(const row of dayRows.results as any[]){const stopList=stopsByDay.get(row.id)??[];const candidates:Record<string,Place[]>={};for(const stop of stopList){const list=candidatesByStop.get(stop.row.id);if(list?.length)candidates[stop.place.id]=list;}const day:Day={id:row.id,label:row.label,date:row.date_label,start:{name:row.start_name,longitude:row.start_longitude,latitude:row.start_latitude},goal:{name:row.goal_name,longitude:row.goal_longitude,latitude:row.goal_latitude},places:stopList.map((item)=>item.place),...(Object.keys(candidates).length?{candidates}:{})};const list=daysByTrip.get(row.trip_id)??[];list.push(day);daysByTrip.set(row.trip_id,list);}
   const trips=(tripRows.results as any[]).map((row)=>({id:row.id,title:row.title,days:daysByTrip.get(row.id)??[],updatedAt:row.updated_at}));
-  return json({trips,savedPlaces:(savedRows.results as any[]).map(place)});
+  return json({trips,savedPlaces:(savedRows.results as any[]).map(place),savedCategories:(categoryRows.results as any[]).map((row)=>row.name)});
 }
 
 async function putState(deviceId:string, request:Request, env:Env) {
-  const body=await request.json() as {trips?:Trip[];savedPlaces?:Place[]};const trips=body.trips??[];const saved=body.savedPlaces??[];const now=Date.now();
-  if(trips.length>30||saved.length>500)return json({error:"저장 가능한 데이터 범위를 초과했습니다."},{status:400});
+  const body=await request.json() as {trips?:Trip[];savedPlaces?:Place[];savedCategories?:string[]};const trips=body.trips??[];const saved=body.savedPlaces??[];const categories=body.savedCategories??[];const now=Date.now();
+  if(trips.length>30||saved.length>500||categories.length>50)return json({error:"저장 가능한 데이터 범위를 초과했습니다."},{status:400});
   const userId=DEFAULT_USER_ID;
   const statements=[
     env.DB.prepare("INSERT INTO devices(id,created_at,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at").bind(deviceId,now,now),
     env.DB.prepare("INSERT INTO users(id,display_name,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at").bind(userId,"기본 사용자",now,now),
     env.DB.prepare("INSERT INTO user_devices(device_id,user_id,linked_at) VALUES(?,?,?) ON CONFLICT(device_id) DO UPDATE SET user_id=excluded.user_id").bind(deviceId,userId,now),
-    env.DB.prepare("DELETE FROM trips WHERE user_id=?").bind(userId),env.DB.prepare("DELETE FROM saved_places WHERE user_id=?").bind(userId)
+    env.DB.prepare("DELETE FROM trips WHERE user_id=?").bind(userId),env.DB.prepare("DELETE FROM saved_places WHERE user_id=?").bind(userId),env.DB.prepare("DELETE FROM saved_categories WHERE user_id=?").bind(userId)
   ];
-  for(let ti=0;ti<trips.length;ti++){const trip=trips[ti];statements.push(env.DB.prepare("INSERT INTO trips(id,device_id,user_id,title,position,updated_at) VALUES(?,?,?,?,?,?)").bind(trip.id,deviceId,userId,trip.title,ti,trip.updatedAt||now));for(let di=0;di<trip.days.length;di++){const day=trip.days[di];statements.push(env.DB.prepare("INSERT INTO trip_days(id,trip_id,label,date_label,position,start_name,start_longitude,start_latitude,goal_name,goal_longitude,goal_latitude) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(day.id,trip.id,day.label,day.date,di,day.start.name,day.start.longitude,day.start.latitude,day.goal.name,day.goal.longitude,day.goal.latitude));for(let si=0;si<day.places.length;si++){const p=day.places[si];const stopId=`${day.id}:${p.id}`;statements.push(env.DB.prepare("INSERT INTO stops(id,day_id,place_id,position,name,category,address,longitude,latitude,link) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(stopId,day.id,p.id,si,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null));for(let ci=0;ci<(day.candidates?.[p.id]??[]).length;ci++){const c=day.candidates![p.id][ci];statements.push(env.DB.prepare("INSERT INTO stop_candidates(id,stop_id,place_id,position,name,category,address,longitude,latitude,link) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(`${stopId}:${c.id}`,stopId,c.id,ci,c.name,c.category,c.address,c.longitude,c.latitude,c.link??null));}}}}
-  for(let i=0;i<saved.length;i++){const p=saved[i];statements.push(env.DB.prepare("INSERT INTO saved_places(id,device_id,user_id,place_id,position,name,category,address,longitude,latitude,link) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(`${deviceId}:${p.id}`,deviceId,userId,p.id,i,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null));}
+  for(let ti=0;ti<trips.length;ti++){const trip=trips[ti];statements.push(env.DB.prepare("INSERT INTO trips(id,device_id,user_id,title,position,updated_at) VALUES(?,?,?,?,?,?)").bind(trip.id,deviceId,userId,trip.title,ti,trip.updatedAt||now));for(let di=0;di<trip.days.length;di++){const day=trip.days[di];statements.push(env.DB.prepare("INSERT INTO trip_days(id,trip_id,label,date_label,position,start_name,start_longitude,start_latitude,goal_name,goal_longitude,goal_latitude) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(day.id,trip.id,day.label,day.date,di,day.start.name,day.start.longitude,day.start.latitude,day.goal.name,day.goal.longitude,day.goal.latitude));for(let si=0;si<day.places.length;si++){const p=day.places[si];const stopId=`${day.id}:${p.id}`;statements.push(env.DB.prepare("INSERT INTO stops(id,day_id,place_id,position,name,category,address,longitude,latitude,link,memo) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(stopId,day.id,p.id,si,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null,p.memo??null));for(let ci=0;ci<(day.candidates?.[p.id]??[]).length;ci++){const c=day.candidates![p.id][ci];statements.push(env.DB.prepare("INSERT INTO stop_candidates(id,stop_id,place_id,position,name,category,address,longitude,latitude,link,memo) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(`${stopId}:${c.id}`,stopId,c.id,ci,c.name,c.category,c.address,c.longitude,c.latitude,c.link??null,c.memo??null));}}}}
+  for(let i=0;i<saved.length;i++){const p=saved[i];statements.push(env.DB.prepare("INSERT INTO saved_places(id,device_id,user_id,place_id,position,name,category,address,longitude,latitude,link,memo,saved_category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${deviceId}:${p.id}`,deviceId,userId,p.id,i,p.name,p.category,p.address,p.longitude,p.latitude,p.link??null,p.memo??null,p.savedCategory??null));}
+  for(let i=0;i<categories.length;i++){const name=categories[i].trim().slice(0,12);if(name)statements.push(env.DB.prepare("INSERT INTO saved_categories(id,user_id,name,position) VALUES(?,?,?,?)").bind(`${userId}:${i}`,userId,name,i));}
   await env.DB.batch(statements);return json({ok:true,updatedAt:now});
 }
 

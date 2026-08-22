@@ -14,6 +14,7 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
   const mapRef = useRef<HTMLDivElement>(null);
   const overlays = useRef<any[]>([]);
   const mapInstance = useRef<any>(null);
+  const fitRoute = useRef<(() => void) | null>(null);
   const [failed, setFailed] = useState(false);
   const [path, setPath] = useState<number[][]>(fallback);
   const key = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
@@ -42,7 +43,7 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
       const map = mapInstance.current ?? new maps.Map(mapRef.current, {
         center: new maps.LatLng(37.86, 127.73),
         zoom: 8,
-        zoomControl: !compact,
+        zoomControl: false,
         scaleControl: false,
       });
       mapInstance.current = map;
@@ -69,10 +70,11 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
         overlays.current.push(marker);
       });
 
-      requestAnimationFrame(() => map.fitBounds(bounds, compact
+      fitRoute.current = () => map.fitBounds(bounds, compact
         ? { top: 24, right: 24, bottom: 34, left: 24 }
         : { top: 70, right: 42, bottom: 56, left: 42 }
-      ));
+      );
+      requestAnimationFrame(() => fitRoute.current?.());
     };
 
     if (window.naver) { draw(); return; }
@@ -88,5 +90,5 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
   }, [key, path, places, start, goal, goalPending]);
 
   if (!key || failed) return <div className="map-canvas"><div className="sea">동해</div><div className="road road-a"/><div className="road road-b"/><div className="route-path"/><span className="route-marker marker-start">출발</span><span className="route-marker marker-rest">쉼</span><span className="route-marker marker-goal">도착</span></div>;
-  return <div className="real-map"><div ref={mapRef} className="naver-map"/><div className="map-legend"><span><i className="legend-s">S</i>출발</span><span><i>1</i>경유지</span><span><i className="legend-g">G</i>도착</span></div></div>;
+  return <div className="real-map"><div ref={mapRef} className="naver-map"/><button type="button" className="fit-route-button" onClick={() => fitRoute.current?.()} aria-label="전체 경로 보기">전체 경로</button><div className="map-legend"><span><i className="legend-s">S</i>출발</span><span><i>1</i>경유지</span><span><i className="legend-g">G</i>도착</span></div></div>;
 }
