@@ -7,21 +7,11 @@ export type Place = { id: string; name: string; category: string; address: strin
 export type RouteEndpoint = { name: string; longitude: number; latitude: number };
 type DayPlan = { id: string; label: string; date: string; start: RouteEndpoint; goal: RouteEndpoint; places: Place[]; candidates?: Record<string,Place[]> };
 type TripPlan = { id: string; title: string; days: DayPlan[]; updatedAt: number };
-const initialStops: Place[] = [
-  {id:"base-rest",name:"가평휴게소",category:"휴게소",address:"경기도 가평군 설악면 미사리로 540번길 51",longitude:127.491,latitude:37.807},
-  {id:"base-beach",name:"아야진해변",category:"관광지",address:"강원특별자치도 고성군 토성면 아야진해변길",longitude:128.552,latitude:38.273},
-  {id:"base-food",name:"고성 맛집",category:"식당",address:"강원특별자치도 고성군",longitude:128.46,latitude:38.36},
-];
-const initialSavedPlaces: Place[] = [
-  {id:"saved-cafe",name:"바다정원",category:"카페",address:"강원특별자치도 고성군 토성면 버리깨길 23",longitude:128.564,latitude:38.255},
-  {id:"saved-market",name:"속초관광수산시장",category:"시장",address:"강원특별자치도 속초시 중앙로147번길 12",longitude:128.589,latitude:38.204},
-  {id:"saved-lake",name:"영랑호",category:"관광지",address:"강원특별자치도 속초시 영랑호반길 140",longitude:128.577,latitude:38.222},
-];
+const initialSavedPlaces: Place[] = [];
 const initialDays: DayPlan[] = [
-  {id:"day-1",label:"1일차",date:"8월 24일",start:{name:"용인 수지구",longitude:127.095,latitude:37.322},goal:{name:"강원도 고성",longitude:128.467,latitude:38.378},places:initialStops,candidates:{"base-rest":[{id:"candidate-naerincheon",name:"내린천휴게소",category:"휴게소",address:"강원특별자치도 인제군 상남면 하남리",longitude:128.279,latitude:37.937}]}},
-  {id:"day-2",label:"2일차",date:"8월 25일",start:{name:"강원도 고성",longitude:128.467,latitude:38.378},goal:{name:"속초 중앙동",longitude:128.591,latitude:38.204},places:[]},
+  {id:"day-1",label:"1일차",date:"날짜 미정",start:{name:"출발지 미정",longitude:127.5,latitude:36.5},goal:{name:"목적지 미정",longitude:127.5,latitude:36.5},places:[]},
 ];
-const initialTrips: TripPlan[] = [{id:"trip-goseong",title:"용인에서 동해까지",days:initialDays,updatedAt:Date.now()}];
+const initialTrips: TripPlan[] = [{id:"trip-new",title:"새 여행",days:initialDays,updatedAt:Date.now()}];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 function nextDateLabel(value:string){const match=value.match(/^(\d{1,2})월\s*(\d{1,2})일$/);if(!match)return "날짜 미정";const date=new Date(2026,Number(match[1])-1,Number(match[2])+1);return `${date.getMonth()+1}월 ${date.getDate()}일`}
@@ -29,7 +19,7 @@ function nextDateLabel(value:string){const match=value.match(/^(\d{1,2})월\s*(\
 export default function Home() {
   const [tab,setTab]=useState<"plan"|"map"|"trips"|"saved">("plan");
   const [trips,setTrips]=useState<TripPlan[]>(initialTrips);
-  const [activeTripId,setActiveTripId]=useState("trip-goseong");
+  const [activeTripId,setActiveTripId]=useState("trip-new");
   const [tripsLoaded,setTripsLoaded]=useState(false);
   const [cloudReady,setCloudReady]=useState(false);
   const [days,setDays]=useState<DayPlan[]>(initialDays);
@@ -64,7 +54,7 @@ export default function Home() {
   function addDay(){if(days.length>=5)return;const previous=days[days.length-1];if(previous.goal.name==="목적지 미정"){window.alert(`${previous.label} 목적지를 먼저 설정해 주세요.`);setActiveDayId(previous.id);return}const id=`day-${Date.now()}`;const next:DayPlan={id,label:`${days.length+1}일차`,date:nextDateLabel(previous.date),start:previous.goal,goal:{name:"목적지 미정",longitude:previous.goal.longitude,latitude:previous.goal.latitude},places:[]};setDays((items)=>[...items,next]);setActiveDayId(id);setLegs([])}
   function removeDay(id:string){if(days.length<=1)return;const target=days.find((day)=>day.id===id);if(!target||!window.confirm(`${target.label}(${target.date}) 일정과 장소를 모두 삭제할까요?`))return;const index=days.findIndex((day)=>day.id===id);const remaining=days.filter((day)=>day.id!==id).map((day,i)=>({...day,label:`${i+1}일차`}));setDays(remaining);if(id===activeDayId)setActiveDayId(remaining[Math.max(0,index-1)]?.id??remaining[0].id);setLegs([])}
   function openTrip(id:string){const trip=trips.find((item)=>item.id===id);if(!trip)return;setActiveTripId(id);setDays(trip.days);setActiveDayId(trip.days[0].id);setLegs([]);setTab("plan")}
-  function addTrip(){const id=`trip-${Date.now()}`;const first:DayPlan={id:`day-${Date.now()}`,label:"1일차",date:"날짜 미정",start:{name:"용인 수지구",longitude:127.095,latitude:37.322},goal:{name:"강원도 고성",longitude:128.467,latitude:38.378},places:[]};const trip:TripPlan={id,title:`새 여행 ${trips.length+1}`,days:[first],updatedAt:Date.now()};setTrips((items)=>[trip,...items]);setActiveTripId(id);setDays(trip.days);setActiveDayId(first.id);setLegs([]);setTab("plan")}
+  function addTrip(){const id=`trip-${Date.now()}`;const first:DayPlan={id:`day-${Date.now()}`,label:"1일차",date:"날짜 미정",start:{name:"출발지 미정",longitude:127.5,latitude:36.5},goal:{name:"목적지 미정",longitude:127.5,latitude:36.5},places:[]};const trip:TripPlan={id,title:`새 여행 ${trips.length+1}`,days:[first],updatedAt:Date.now()};setTrips((items)=>[trip,...items]);setActiveTripId(id);setDays(trip.days);setActiveDayId(first.id);setLegs([]);setTab("plan")}
   function renameTrip(id:string){const trip=trips.find((item)=>item.id===id);if(!trip)return;const title=window.prompt("여행 이름을 입력하세요.",trip.title)?.trim();if(title)setTrips((items)=>items.map((item)=>item.id===id?{...item,title,updatedAt:Date.now()}:item))}
   function removeTrip(id:string){if(trips.length<=1)return;const trip=trips.find((item)=>item.id===id);if(!trip||!window.confirm(`‘${trip.title}’ 여행을 삭제할까요?`))return;const remaining=trips.filter((item)=>item.id!==id);setTrips(remaining);if(id===activeTripId){const next=remaining[0];setActiveTripId(next.id);setDays(next.days);setActiveDayId(next.days[0].id);setLegs([])}}
 
