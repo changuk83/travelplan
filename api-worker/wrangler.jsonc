@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:3000,https://gildam.changuk83.workers.dev"
+    "ALLOWED_ORIGINS": "http://localhost:3000,https://gildam.changuk83.workers.dev,https://gildam-trip.changuk83.chatgpt.site"
   },
   "d1_databases": [
     {
