@@ -26,12 +26,10 @@ export default function NaverMap({ places, start, goal, onRouteData, cacheScope 
       onRouteData?.([]);
       return;
     }
-    setPath([]);
-    onRouteData?.([]);
     let cancelled = false;
     fetch(`${API_BASE}/api/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ waypoints: places, start, goal, cacheScope }) })
-      .then((response) => response.json())
-      .then((data: { path?: number[][]; legs?: RouteLeg[] }) => { if (!cancelled) { if (data.path?.length) setPath(data.path); onRouteData?.(data.legs ?? []); } })
+      .then((response) => { if (!response.ok) throw new Error("Route request failed"); return response.json(); })
+      .then((data: { path?: number[][]; legs?: RouteLeg[] }) => { if (!cancelled && data.path?.length) { setPath(data.path); onRouteData?.(data.legs ?? []); } })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [places, start, goal, goalPending, onRouteData, cacheScope]);
