@@ -44,6 +44,9 @@ function routeLegs(route: NaverRoute) {
   return legs;
 }
 
+const samePoint = (a: Point, b: Point) => Math.abs(a.longitude - b.longitude) < 0.000001 && Math.abs(a.latitude - b.latitude) < 0.000001;
+function compactRoute(points: Point[]) { const compact = [points[0]]; const duplicateLegs: boolean[] = []; for (let index = 1; index < points.length; index++) { const duplicate = samePoint(points[index - 1], points[index]); duplicateLegs.push(duplicate); if (!duplicate) compact.push(points[index]); } return { compact, duplicateLegs }; }
+
 export async function POST(request: Request) {
   const { waypoints = [], start, goal, cacheScope } = await request.json() as { waypoints?: Point[]; start?: Point; goal?: Point; cacheScope?: RouteCacheScope };
   if (waypoints.length > MAX_WAYPOINTS) return Response.json({ error: `경유지는 최대 ${MAX_WAYPOINTS}곳까지 추가할 수 있습니다.` }, { status: 400 });
@@ -65,7 +68,14 @@ export async function POST(request: Request) {
   const secret = process.env.NAVER_MAP_CLIENT_SECRET;
   if (!id || !secret) return Response.json({ error: "지도 API 키가 설정되지 않았습니다." }, { status: 500 });
   try {
-    const responses = await Promise.all(splitRoute(routeStart, waypoints, routeGoal).map(async (points) => {
+    const originalPoints = [routeStart, ...waypoints, routeGoal];
+    const { compact: routePoints, duplicateLegs } = compactRoute(originalPoints);
+    if (routePoints.length === 1) {
+      const response = Response.json({ path: [[routePoints[0].longitude, routePoints[0].latitude]], summary: { distance: 0, duration: 0 }, legs: duplicateLegs.map(() => ({ distance: 0, duration: 0 })) }, { headers: { "Cache-Control": `public, max-age=${ROUTE_CACHE_SECONDS}`, "X-Gildam-Route-Cache": "MISS" } });
+      if (cache) try { await cache.put(cacheRequest, response.clone()); } catch {}
+      return response;
+    }
+    const responses = await Promise.all(splitRoute(routePoints[0], routePoints.slice(1, -1), routePoints.at(-1)!).map(async (points) => {
       const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
       url.searchParams.set("start", `${points[0].longitude},${points[0].latitude}`);
       url.searchParams.set("goal", `${points.at(-1)!.longitude},${points.at(-1)!.latitude}`);
@@ -78,15 +88,17 @@ export async function POST(request: Request) {
       return data.route?.traoptimal?.[0];
     }));
     const path: number[][] = [];
-    const legs: Array<{ distance: number; duration: number }> = [];
+    const calculatedLegs: Array<{ distance: number; duration: number }> = [];
     let distance = 0;
     let duration = 0;
     responses.forEach((route, index) => {
       path.push(...(index ? route?.path?.slice(1) ?? [] : route?.path ?? []));
-      legs.push(...routeLegs(route ?? {}));
+      calculatedLegs.push(...routeLegs(route ?? {}));
       distance += route?.summary?.distance ?? 0;
       duration += route?.summary?.duration ?? 0;
     });
+    let calculatedIndex = 0;
+    const legs = duplicateLegs.map((duplicate) => duplicate ? { distance: 0, duration: 0 } : calculatedLegs[calculatedIndex++] ?? { distance: 0, duration: 0 });
     const response = Response.json({ path, summary: { distance, duration }, legs }, { headers: { "Cache-Control": `public, max-age=${ROUTE_CACHE_SECONDS}`, "X-Gildam-Route-Cache": "MISS" } });
     if (cache) try { await cache.put(cacheRequest, response.clone()); } catch {}
     return response;

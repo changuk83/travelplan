@@ -9,6 +9,7 @@ type Env = {
   NAVER_MAP_CLIENT_SECRET: string;
   NAVER_SEARCH_CLIENT_ID: string;
   NAVER_SEARCH_CLIENT_SECRET: string;
+  KAKAO_REST_API_KEY: string;
   GOOGLE_MAPS_API_KEY: string;
 };
 
@@ -26,6 +27,7 @@ const ROUTE_CACHE_SECONDS = 60 * 60 * 6;
 const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });
 const clean = (value = "") => value.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
 const coordinate = (value?: string) => { const n = Number(value); return Math.abs(n) > 180 ? n / 10_000_000 : n; };
+const distanceKm=(from:{longitude:number;latitude:number},to:{longitude:number;latitude:number})=>{const radius=6371;const radians=(value:number)=>value*Math.PI/180;const latitude=radians(to.latitude-from.latitude);const longitude=radians(to.longitude-from.longitude);const value=Math.sin(latitude/2)**2+Math.cos(radians(from.latitude))*Math.cos(radians(to.latitude))*Math.sin(longitude/2)**2;return radius*2*Math.atan2(Math.sqrt(value),Math.sqrt(1-value));};
 const validDevice = (value: string | null) => value && /^[a-zA-Z0-9_-]{8,80}$/.test(value) ? value : null;
 
 async function enforceRateLimit(request: Request, limiter: RateLimiter) {
@@ -54,6 +56,9 @@ function routeCacheRequest(request:Request,points:Array<{longitude:number;latitu
   return new Request(url,{method:"GET"});
 }
 
+const samePoint=(a:{longitude:number;latitude:number},b:{longitude:number;latitude:number})=>Math.abs(a.longitude-b.longitude)<0.000001&&Math.abs(a.latitude-b.latitude)<0.000001;
+function compactRoute(points:Array<{longitude:number;latitude:number}>){const compact=[points[0]];const duplicateLegs:boolean[]=[];for(let index=1;index<points.length;index++){const duplicate=samePoint(points[index-1],points[index]);duplicateLegs.push(duplicate);if(!duplicate)compact.push(points[index]);}return{compact,duplicateLegs};}
+
 async function directions(request: Request, env: Env, ctx:ExecutionContext) {
   const { waypoints = [], start, goal, cacheScope } = await request.json() as { waypoints?:Place[]; start?:Place; goal?:Place; cacheScope?:{userId?:number;tripId?:string;dayId?:string;mode?:"schedule"|"preview"} };
   if (!env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID || !env.NAVER_MAP_CLIENT_SECRET) return json({error:"지도 API 키가 설정되지 않았습니다."},{status:500});
@@ -62,8 +67,10 @@ async function directions(request: Request, env: Env, ctx:ExecutionContext) {
   const cacheRequest=routeCacheRequest(request,points,cacheScope);
   const cached=await caches.default.match(cacheRequest);
   if(cached){const headers=new Headers(cached.headers);headers.set("x-gildam-route-cache","HIT");return new Response(cached.body,{status:cached.status,statusText:cached.statusText,headers});}
+  const {compact:routePoints,duplicateLegs}=compactRoute(points);
+  if(routePoints.length===1){const response=json({path:[[routePoints[0].longitude,routePoints[0].latitude]],summary:{distance:0,duration:0},legs:duplicateLegs.map(()=>({distance:0,duration:0}))},{headers:{"cache-control":`public, max-age=${ROUTE_CACHE_SECONDS}`,"x-gildam-route-cache":"MISS"}});ctx.waitUntil(caches.default.put(cacheRequest,response.clone()));return response;}
   const chunks:Place[][]=[];
-  for(let index=0;index<points.length-1;index+=6)chunks.push(points.slice(index,Math.min(index+7,points.length)) as Place[]);
+  for(let index=0;index<routePoints.length-1;index+=6)chunks.push(routePoints.slice(index,Math.min(index+7,routePoints.length)) as Place[]);
   const routes=await Promise.all(chunks.map(async(points)=>{
     const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
     url.searchParams.set("start",`${points[0].longitude},${points[0].latitude}`);
@@ -76,16 +83,19 @@ async function directions(request: Request, env: Env, ctx:ExecutionContext) {
     if(!response.ok)throw new Error(data.message||"경로를 계산하지 못했습니다.");
     return data.route?.traoptimal?.[0];
   }));
-  const path:number[][]=[];const legs:{distance:number;duration:number}[]=[];let totalDistance=0;let totalDuration=0;
-  routes.forEach((route,index)=>{path.push(...(index?(route?.path??[]).slice(1):route?.path??[]));let distance=0;let duration=0;for(const guide of route?.guide??[]){distance+=guide.distance??0;duration+=guide.duration??0;if(guide.type===87||guide.type===88){legs.push({distance,duration});distance=0;duration=0;}}if(distance||duration)legs.push({distance,duration});totalDistance+=route?.summary?.distance??0;totalDuration+=route?.summary?.duration??0;});
+  const path:number[][]=[];const calculatedLegs:{distance:number;duration:number}[]=[];let totalDistance=0;let totalDuration=0;
+  routes.forEach((route,index)=>{path.push(...(index?(route?.path??[]).slice(1):route?.path??[]));let distance=0;let duration=0;for(const guide of route?.guide??[]){distance+=guide.distance??0;duration+=guide.duration??0;if(guide.type===87||guide.type===88){calculatedLegs.push({distance,duration});distance=0;duration=0;}}if(distance||duration)calculatedLegs.push({distance,duration});totalDistance+=route?.summary?.distance??0;totalDuration+=route?.summary?.duration??0;});
+  let calculatedIndex=0;const legs=duplicateLegs.map((duplicate)=>duplicate?{distance:0,duration:0}:calculatedLegs[calculatedIndex++]??{distance:0,duration:0});
   const response=json({path,summary:{distance:totalDistance,duration:totalDuration},legs},{headers:{"cache-control":`public, max-age=${ROUTE_CACHE_SECONDS}`,"x-gildam-route-cache":"MISS"}});
   ctx.waitUntil(caches.default.put(cacheRequest,response.clone()));
   return response;
 }
 
 async function search(request: Request, env: Env) {
-  const q = new URL(request.url).searchParams.get("q")?.trim();
+  const params=new URL(request.url).searchParams;const q = params.get("q")?.trim();
   if (!q || q.length < 2) return json({error:"두 글자 이상 입력해 주세요."},{status:400});
+  const fromLng=params.get("fromLng"),fromLat=params.get("fromLat"),toLng=params.get("toLng"),toLat=params.get("toLat");const from={longitude:Number(fromLng),latitude:Number(fromLat)};const to={longitude:Number(toLng),latitude:Number(toLat)};const hasFrom=fromLng!==null&&fromLat!==null&&Number.isFinite(from.longitude)&&Number.isFinite(from.latitude);const hasTo=toLng!==null&&toLat!==null&&Number.isFinite(to.longitude)&&Number.isFinite(to.latitude);
+  if(env.KAKAO_REST_API_KEY&&hasFrom){try{const kakaoUrl=new URL("https://dapi.kakao.com/v2/local/search/keyword.json");kakaoUrl.searchParams.set("query",q);kakaoUrl.searchParams.set("x",String(from.longitude));kakaoUrl.searchParams.set("y",String(from.latitude));kakaoUrl.searchParams.set("radius","20000");kakaoUrl.searchParams.set("size","15");kakaoUrl.searchParams.set("sort","distance");const kakaoResponse=await fetch(kakaoUrl,{headers:{authorization:`KakaoAK ${env.KAKAO_REST_API_KEY}`}});if(kakaoResponse.ok){const kakaoData=await kakaoResponse.json() as any;const places=(kakaoData.documents??[]).map((item:any)=>({id:`kakao-${item.id}`,name:item.place_name,category:item.category_name||item.category_group_name||"장소",address:item.road_address_name||item.address_name||"",longitude:Number(item.x),latitude:Number(item.y),link:item.place_url||""}));if(hasTo)places.sort((a:Place,b:Place)=>(distanceKm(from,a)+distanceKm(a,to))-(distanceKm(from,b)+distanceKm(b,to)));if(places.length)return json({source:"kakao",places});}}catch{}}
   const localUrl = new URL("https://naverapihub.apigw.ntruss.com/search/v1/local");
   localUrl.searchParams.set("query",q);localUrl.searchParams.set("display","5");localUrl.searchParams.set("format","json");
   const localResponse = await fetch(localUrl,{headers:{"X-NCP-APIGW-API-KEY-ID":env.NAVER_SEARCH_CLIENT_ID,"X-NCP-APIGW-API-KEY":env.NAVER_SEARCH_CLIENT_SECRET}});

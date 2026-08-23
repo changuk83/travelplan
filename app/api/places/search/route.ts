@@ -8,17 +8,34 @@ const coordinate = (value?: string) => {
   const number = Number(value);
   return Math.abs(number) > 180 ? number / 10_000_000 : number;
 };
+const distanceKm = (from: { longitude: number; latitude: number }, to: { longitude: number; latitude: number }) => { const radius = 6371; const radians = (value: number) => value * Math.PI / 180; const latitude = radians(to.latitude - from.latitude); const longitude = radians(to.longitude - from.longitude); const value = Math.sin(latitude / 2) ** 2 + Math.cos(radians(from.latitude)) * Math.cos(radians(to.latitude)) * Math.sin(longitude / 2) ** 2; return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value)); };
 
 export async function GET(request: Request) {
-  const query = new URL(request.url).searchParams.get("q")?.trim();
+  const params = new URL(request.url).searchParams;
+  const query = params.get("q")?.trim();
   if (!query || query.length < 2) return Response.json({ error: "두 글자 이상 입력해 주세요." }, { status: 400 });
 
   const hubId = process.env.NAVER_SEARCH_CLIENT_ID;
   const hubSecret = process.env.NAVER_SEARCH_CLIENT_SECRET;
   const mapId = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
   const mapSecret = process.env.NAVER_MAP_CLIENT_SECRET;
+  const kakaoKey = process.env.KAKAO_REST_API_KEY;
 
   try {
+    const fromLng = params.get("fromLng"), fromLat = params.get("fromLat"), toLng = params.get("toLng"), toLat = params.get("toLat");
+    const from = { longitude: Number(fromLng), latitude: Number(fromLat) }, to = { longitude: Number(toLng), latitude: Number(toLat) };
+    const hasFrom = fromLng !== null && fromLat !== null && Number.isFinite(from.longitude) && Number.isFinite(from.latitude), hasTo = toLng !== null && toLat !== null && Number.isFinite(to.longitude) && Number.isFinite(to.latitude);
+    if (kakaoKey && hasFrom) {
+      const kakaoUrl = new URL("https://dapi.kakao.com/v2/local/search/keyword.json");
+      kakaoUrl.searchParams.set("query", query); kakaoUrl.searchParams.set("x", String(from.longitude)); kakaoUrl.searchParams.set("y", String(from.latitude)); kakaoUrl.searchParams.set("radius", "20000"); kakaoUrl.searchParams.set("size", "15"); kakaoUrl.searchParams.set("sort", "distance");
+      const kakaoResponse = await fetch(kakaoUrl, { headers: { Authorization: `KakaoAK ${kakaoKey}` } }).catch(() => null);
+      if (kakaoResponse?.ok) {
+        const kakaoData = await kakaoResponse.json() as { documents?: Array<{ id: string; place_name: string; category_name?: string; category_group_name?: string; road_address_name?: string; address_name?: string; x: string; y: string; place_url?: string }> };
+        const places = (kakaoData.documents ?? []).map((item) => ({ id: `kakao-${item.id}`, name: item.place_name, category: item.category_name || item.category_group_name || "장소", address: item.road_address_name || item.address_name || "", longitude: Number(item.x), latitude: Number(item.y), link: item.place_url || "" }));
+        if (hasTo) places.sort((a, b) => (distanceKm(from, a) + distanceKm(a, to)) - (distanceKm(from, b) + distanceKm(b, to)));
+        if (places.length) return Response.json({ source: "kakao", places });
+      }
+    }
     if (hubId && hubSecret) {
       const url = new URL("https://naverapihub.apigw.ntruss.com/search/v1/local");
       url.searchParams.set("query", query); url.searchParams.set("display", "5"); url.searchParams.set("format", "json");
