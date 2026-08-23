@@ -50,3 +50,35 @@
 .save-category-dialog .category-select-grid button{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:6px;text-align:left;padding:10px 8px}.save-category-dialog .category-select-grid button i{display:grid;place-items:center;width:17px;height:17px;border:1.5px solid #bfcec5;border-radius:5px;color:#fff;font-style:normal;font-size:10px;font-weight:900}.save-category-dialog .category-select-grid button b{min-width:0;overflow-wrap:anywhere;font-size:10px}.save-category-dialog .category-select-grid button.active i{border-color:var(--green);background:var(--green)}.save-category-dialog>.dialog-primary{width:100%;margin-top:11px}.save-category-dialog>.dialog-primary:disabled{opacity:.42;cursor:not-allowed}
 .save-category-dialog .category-select-grid button.recommended:not(.active){background:#f8faf8;color:#536159;box-shadow:inset 0 0 0 1px #1daf6914}.promote-candidate{width:20px!important;height:20px!important;display:grid!important;place-items:center;flex:0 0 20px;padding:0!important;border-radius:50%!important;color:#87938c!important}.promote-candidate>span{display:block;font-size:16px;line-height:1;font-weight:800;transform:translateY(-1px)}.promote-candidate:active{background:#edf3ef!important;transform:scale(.9)}.promote-candidate+.schedule-memo-icon{margin-left:-8px}
 .plan-map.pinned{position:relative;z-index:4;box-shadow:0 10px 24px #173b282b}.map-pinned body{overflow:hidden}.map-pinned .app-shell{height:100dvh;overflow:hidden}.map-pinned .plan-page{display:flex;flex-direction:column;height:calc(100dvh - 148px);max-height:702px;min-height:0;overflow:hidden}.map-pinned .plan-page>.trip-hero,.map-pinned .plan-page>.day-switcher{display:none}.map-pinned .plan-page>.map-pin-row,.map-pinned .plan-page>.plan-map,.map-pinned .plan-page>.section-heading{flex:0 0 auto}.map-pinned .plan-page>.map-pin-row{margin-top:4px}.map-pinned .plan-page>.timeline{flex:1 1 0;height:0;min-height:0;overflow-x:hidden;position:relative;z-index:1;overflow-y:auto;overscroll-behavior-y:contain;touch-action:pan-y;background:var(--paper);padding-bottom:24px}
+
+/* Keep the mobile UI usable when the browser or OS uses larger text. */
+.app-header{height:auto;min-height:78px}
+.plan-page>.trip-hero{height:auto;min-height:72px;overflow:visible}
+.trip-hero h2,.hero-stats span,.section-heading p,.section-heading span{overflow-wrap:anywhere}
+.hero-top,.hero-stats{flex-wrap:wrap}
+.day-switcher{height:auto;min-height:54px;align-items:stretch}
+.day-tab{min-height:50px}
+.day-select{height:auto;min-height:100%}
+.map-pin-row{height:auto;min-height:28px}
+.stop-actions{flex-wrap:wrap;row-gap:7px}
+.range-summary{flex-wrap:wrap}
+.range-summary strong{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.category-manager-list>div{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.category-manager-list>div>button{min-height:30px;white-space:normal}
+.category-select-grid button{min-height:42px}
+.category-select-grid button b{line-height:1.35}
+.saved-search-results article{align-items:flex-start;flex-wrap:wrap}
+.saved-search-results article>div{min-width:0;flex:1 1 180px}
+.saved-search-results strong,.saved-search-results p{overflow-wrap:anywhere}
+.bottom-nav{height:auto;min-height:70px}
+.bottom-nav button{min-height:64px;line-height:1.25;padding:5px 2px}
+.trips-page .trip-title-row{align-items:flex-start}
+.trips-page .trip-title-row h3{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.35}
+
+@media(max-width:360px){
+  .saved-inline-search form{grid-template-columns:minmax(0,1fr) auto}
+  .saved-inline-search form button.close-saved-search{grid-column:1/-1;min-height:34px;justify-content:center}
+  .category-select-grid{grid-template-columns:minmax(0,1fr)}
+  .section-heading{gap:10px}
+  .section-heading>div{min-width:0}
+}
