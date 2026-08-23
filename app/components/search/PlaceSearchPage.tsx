@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent, RefObject } from "react";
+import { type FormEvent, type RefObject, useEffect, useRef } from "react";
 import NaverMap from "../../NaverMap";
 import { distanceLabel, placeCategories, pointDistance } from "../../domain/place";
 import type { Place, RouteEndpoint, SavedCategory, SearchSource } from "../../domain/types";
@@ -31,6 +31,7 @@ export default function PlaceSearchPage({
   savedPlacesRef,
   onQueryChange,
   onSearch,
+  onDismissResults,
   onCancelSelection,
   onScrollToSaved,
   onToggleSaved,
@@ -60,6 +61,7 @@ export default function PlaceSearchPage({
   savedPlacesRef: RefObject<HTMLDivElement | null>;
   onQueryChange: (value: string) => void;
   onSearch: (event: FormEvent) => void;
+  onDismissResults: () => void;
   onCancelSelection: () => void;
   onScrollToSaved: () => void;
   onToggleSaved: (place: Place) => void;
@@ -67,6 +69,22 @@ export default function PlaceSearchPage({
   onSavedCategoryChange: (category: CategoryFilter) => void;
   onOpenSavedPlaces: () => void;
 }) {
+  const searchFormRef = useRef<HTMLFormElement>(null);
+  const searchResultsRef = useRef<HTMLDivElement>(null);
+  const searchVisible = results.length > 0 || Boolean(error);
+
+  useEffect(() => {
+    if (!searchVisible) return;
+    const dismissOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (searchFormRef.current?.contains(target) || searchResultsRef.current?.contains(target)) return;
+      onDismissResults();
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    return () => document.removeEventListener("pointerdown", dismissOutside, true);
+  }, [searchVisible, onDismissResults]);
+
   const selectionLabel = (place: Place) =>
     endpointTarget
       ? `${endpointTarget === "start" ? "출발지" : "목적지"}로 설정`
@@ -84,7 +102,7 @@ export default function PlaceSearchPage({
     <section className="page map-page">
       <div className="map-wrap">
         <NaverMap places={places} start={start} goal={goal} />
-        <form className="place-search" onSubmit={onSearch}>
+        <form ref={searchFormRef} className="place-search" onSubmit={onSearch}>
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
@@ -124,8 +142,8 @@ export default function PlaceSearchPage({
             <span aria-hidden="true">↓</span>
           </button>
         )}
-        {(results.length > 0 || error) && (
-          <div className={`search-results ${choosingPlace ? "with-insertion" : ""}`}>
+        {searchVisible && (
+          <div ref={searchResultsRef} className={`search-results ${choosingPlace ? "with-insertion" : ""}`}>
             {source === "geocoding" && (
               <p className="search-notice">장소 검색 결과가 없어 주소 검색 결과를 표시했어요.</p>
             )}

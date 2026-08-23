@@ -228,6 +228,11 @@ export default function Home() {
     setQuery("");
   }
 
+  function dismissPlaceSearchResults() {
+    setResults([]);
+    setSearchError("");
+  }
+
   function changeTab(nextTab: AppTab) {
     if (nextTab !== "saved" && savedSearchOpen) closeSavedSearch();
     setTab(nextTab);
@@ -814,6 +819,7 @@ export default function Home() {
           savedPlacesRef={savedPlacesRef}
           onQueryChange={setQuery}
           onSearch={search}
+          onDismissResults={dismissPlaceSearchResults}
           onCancelSelection={() => {
             setEndpointTarget(null);
             setCandidateFor(null);
