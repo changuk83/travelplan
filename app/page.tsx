@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, Fragment, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, useEffect, useMemo, useRef, useState } from "react";
-import NaverMap, { type RouteLeg } from "./NaverMap";
+import NaverMap, { type RouteCacheScope, type RouteLeg } from "./NaverMap";
 
 declare global { interface Window { Kakao?: { init:(key:string)=>void;isInitialized:()=>boolean;Navi:{start:(options:{name:string;x:number;y:number;coordType:"wgs84"})=>void} } } }
 
@@ -19,6 +19,7 @@ const initialDays: DayPlan[] = [
 const initialTrips: TripPlan[] = [{id:"trip-new",title:"새 여행",days:initialDays,updatedAt:Date.now()}];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const KAKAO_JAVASCRIPT_KEY = process.env.NEXT_PUBLIC_KAKAO_JAVASCRIPT_KEY ?? "";
+const CURRENT_USER_ID = 1;
 const DEFAULT_SAVED_CATEGORIES:SavedCategory[]=["맛집","카페","숙소","관광","휴게소","기타"];
 let kakaoSdkPromise:Promise<void>|null=null;
 
@@ -93,6 +94,7 @@ export default function Home() {
   const activeTrip=trips.find((trip)=>trip.id===activeTripId)??trips[0];
   const places=activeDay?.places??[];
   const mapPlaces=useMemo(()=>places.map((place)=>activeDay.candidates?.[place.id]?.find((candidate)=>candidate.id===candidatePreviews[place.id])??place),[places,activeDay.candidates,candidatePreviews]);
+  const routeCacheScope=useMemo<RouteCacheScope>(()=>({userId:CURRENT_USER_ID,tripId:activeTripId,dayId:activeDayId,mode:Object.keys(candidatePreviews).length?"preview":"schedule"}),[activeTripId,activeDayId,candidatePreviews]);
   const choosingPlace=insertIndex!==null||candidateFor!==null||endpointTarget!==null;
   const insertionFrom=insertIndex===null?"":`${activeDay.label} · ${insertIndex===0?activeDay.start.name:places[insertIndex-1]?.name}`;
   const insertionTo=insertIndex===null?"":`( 추가할 장소 ) → ${insertIndex===places.length?activeDay.goal.name:places[insertIndex]?.name}`;
@@ -162,7 +164,7 @@ export default function Home() {
       <div className="trip-hero"><div className="hero-top"><span>{days[0]?.date}–{days[days.length-1]?.date} · {days.length}일 여행</span><span className="weather">맑음 27°</span></div><h2>{activeTrip.title}</h2><div className="hero-stats"><span>{activeDay.label}</span><span>경유지 {places.length}곳</span><span>자동 저장</span></div></div>
       <div className="day-switcher" role="tablist" aria-label="여행 날짜">{days.map((day)=><div className={`day-tab ${day.id===activeDayId?"active":""}`} key={day.id}><button role="tab" aria-selected={day.id===activeDayId} className="day-select" onClick={()=>selectDay(day.id)}><strong>{day.label}</strong><span>{day.date}</span></button><button className="day-date-edit" onClick={()=>setDateEditor({dayId:day.id,value:dateInputValue(day.date)})} aria-label={`${day.label} 날짜 수정`}>▣</button><button className="day-remove" onClick={()=>removeDay(day.id)} disabled={days.length<=1} aria-label={`${day.label} 삭제`}>×</button></div>)}<button className="add-day" onClick={addDay} aria-label="여행 날짜 추가">＋</button></div>
       <div className="map-pin-row"><button type="button" className={mapPinned?"active":""} aria-pressed={mapPinned} onClick={()=>setMapPinned((value)=>!value)}><i aria-hidden="true">⌖</i>{mapPinned?"지도 고정 해제":"스크롤할 때 지도 고정"}</button></div>
-      <div className={`plan-map ${mapPinned?"pinned":""}`}><NaverMap places={mapPlaces} start={activeDay.start} goal={activeDay.goal} onRouteData={setLegs}/></div>
+      <div className={`plan-map ${mapPinned?"pinned":""}`}><NaverMap places={mapPlaces} start={activeDay.start} goal={activeDay.goal} onRouteData={setLegs} cacheScope={routeCacheScope}/></div>
       <SectionTitle title={`${activeDay.label} 일정`} subtitle="각 구간의 실시간 자동차 거리와 예상 시간이에요"/>
       <div className={`timeline sortable ${dragIndex!==null?"is-sorting":""}`}>
         <article className="timeline-item fixed-stop"><time>출발</time><div className="stop-dot">S</div><div className="stop-content"><div className="stop-title-row"><h3>{activeDay.start.name}</h3>{activeDay.start.name!=="출발지 미정"&&<NavigationLinks place={activeDay.start}/>}</div><p>{activeDay.label} 출발지예요</p><div className="stop-actions"><button className="add-place" onClick={()=>chooseEndpoint("start")}>출발지 변경</button></div></div></article>

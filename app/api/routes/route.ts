@@ -1,8 +1,22 @@
 type Point = { longitude: number; latitude: number };
 type NaverRoute = { path?: number[][]; summary?: { distance?: number; duration?: number }; guide?: Array<{ type?: number; distance?: number; duration?: number }> };
+type RouteCacheScope = { userId?: number; tripId?: string; dayId?: string; mode?: "schedule" | "preview" };
+type CloudflareCacheStorage = CacheStorage & { default: Cache };
 
 const MAX_WAYPOINTS = 30;
 const WAYPOINTS_PER_REQUEST = 5;
+const ROUTE_CACHE_SECONDS = 60 * 60 * 6;
+
+function routeCacheRequest(request: Request, points: Point[], scope?: RouteCacheScope) {
+  const url = new URL("/__gildam-cache/routes/v1", request.url);
+  url.searchParams.set("option", "traoptimal");
+  url.searchParams.set("user", String(scope?.userId ?? "shared"));
+  url.searchParams.set("trip", scope?.tripId ?? "unscoped");
+  url.searchParams.set("day", scope?.dayId ?? "unscoped");
+  url.searchParams.set("mode", scope?.mode ?? "schedule");
+  url.searchParams.set("points", points.map((point) => `${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`).join("|"));
+  return new Request(url, { method: "GET" });
+}
 
 function splitRoute(start: Point, waypoints: Point[], goal: Point) {
   const points = [start, ...waypoints, goal];
@@ -31,13 +45,25 @@ function routeLegs(route: NaverRoute) {
 }
 
 export async function POST(request: Request) {
-  const { waypoints = [], start, goal } = await request.json() as { waypoints?: Point[]; start?: Point; goal?: Point };
-  const id = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
-  const secret = process.env.NAVER_MAP_CLIENT_SECRET;
-  if (!id || !secret) return Response.json({ error: "지도 API 키가 설정되지 않았습니다." }, { status: 500 });
+  const { waypoints = [], start, goal, cacheScope } = await request.json() as { waypoints?: Point[]; start?: Point; goal?: Point; cacheScope?: RouteCacheScope };
   if (waypoints.length > MAX_WAYPOINTS) return Response.json({ error: `경유지는 최대 ${MAX_WAYPOINTS}곳까지 추가할 수 있습니다.` }, { status: 400 });
   const routeStart = start ?? { longitude: 127.095, latitude: 37.322 };
   const routeGoal = goal ?? { longitude: 128.467, latitude: 38.378 };
+  const cache = (globalThis.caches as CloudflareCacheStorage | undefined)?.default;
+  const cacheRequest = routeCacheRequest(request, [routeStart, ...waypoints, routeGoal], cacheScope);
+  if (cache) {
+    try {
+      const cached = await cache.match(cacheRequest);
+      if (cached) {
+        const headers = new Headers(cached.headers);
+        headers.set("X-Gildam-Route-Cache", "HIT");
+        return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+      }
+    } catch {}
+  }
+  const id = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
+  const secret = process.env.NAVER_MAP_CLIENT_SECRET;
+  if (!id || !secret) return Response.json({ error: "지도 API 키가 설정되지 않았습니다." }, { status: 500 });
   try {
     const responses = await Promise.all(splitRoute(routeStart, waypoints, routeGoal).map(async (points) => {
       const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
@@ -61,7 +87,9 @@ export async function POST(request: Request) {
       distance += route?.summary?.distance ?? 0;
       duration += route?.summary?.duration ?? 0;
     });
-    return Response.json({ path, summary: { distance, duration }, legs });
+    const response = Response.json({ path, summary: { distance, duration }, legs }, { headers: { "Cache-Control": `public, max-age=${ROUTE_CACHE_SECONDS}`, "X-Gildam-Route-Cache": "MISS" } });
+    if (cache) try { await cache.put(cacheRequest, response.clone()); } catch {}
+    return response;
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "경로를 계산하지 못했습니다." }, { status: 502 });
   }

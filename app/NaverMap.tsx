@@ -8,8 +8,9 @@ declare global { interface Window { naver?: { maps: any } } }
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export type RouteLeg = { distance: number; duration: number };
+export type RouteCacheScope = { userId: number; tripId: string; dayId: string; mode: "schedule" | "preview" };
 
-export default function NaverMap({ places, start, goal, onRouteData }: { places: Place[]; start: RouteEndpoint; goal: RouteEndpoint; onRouteData?: (legs: RouteLeg[]) => void }) {
+export default function NaverMap({ places, start, goal, onRouteData, cacheScope }: { places: Place[]; start: RouteEndpoint; goal: RouteEndpoint; onRouteData?: (legs: RouteLeg[]) => void; cacheScope?: RouteCacheScope }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const overlays = useRef<any[]>([]);
   const mapInstance = useRef<any>(null);
@@ -28,12 +29,12 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
     setPath([]);
     onRouteData?.([]);
     let cancelled = false;
-    fetch(`${API_BASE}/api/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ waypoints: places, start, goal }) })
+    fetch(`${API_BASE}/api/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ waypoints: places, start, goal, cacheScope }) })
       .then((response) => response.json())
       .then((data: { path?: number[][]; legs?: RouteLeg[] }) => { if (!cancelled) { if (data.path?.length) setPath(data.path); onRouteData?.(data.legs ?? []); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [places, start, goal, goalPending, onRouteData]);
+  }, [places, start, goal, goalPending, onRouteData, cacheScope]);
 
   useEffect(() => {
     if (!key || !mapRef.current) return;
