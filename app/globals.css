@@ -77,8 +77,9 @@
 
 @media(max-width:360px){
   .saved-inline-search form{grid-template-columns:minmax(0,1fr) auto}
-  .saved-inline-search form button.close-saved-search{grid-column:1/-1;min-height:34px;justify-content:center}
   .category-select-grid{grid-template-columns:minmax(0,1fr)}
   .section-heading{gap:10px}
   .section-heading>div{min-width:0}
 }
+.saved-search-dismiss-layer{position:absolute;inset:0;z-index:11;background:transparent}
+.saved-inline-search form{grid-template-columns:minmax(0,1fr) auto}
