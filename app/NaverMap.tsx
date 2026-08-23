@@ -5,7 +5,6 @@ import type { Place, RouteEndpoint } from "./page";
 
 declare global { interface Window { naver?: { maps: any } } }
 
-const fallback = [[127.095,37.322],[127.22,37.49],[127.49,37.73],[127.72,38.03],[128.12,38.25],[128.47,38.38]];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export type RouteLeg = { distance: number; duration: number };
@@ -16,7 +15,7 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
   const mapInstance = useRef<any>(null);
   const fitRoute = useRef<(() => void) | null>(null);
   const [failed, setFailed] = useState(false);
-  const [path, setPath] = useState<number[][]>(fallback);
+  const [path, setPath] = useState<number[][]>([]);
   const key = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
   const goalPending = goal.name === "목적지 미정";
 
@@ -26,6 +25,8 @@ export default function NaverMap({ places, start, goal, onRouteData }: { places:
       onRouteData?.([]);
       return;
     }
+    setPath([]);
+    onRouteData?.([]);
     let cancelled = false;
     fetch(`${API_BASE}/api/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ waypoints: places, start, goal }) })
       .then((response) => response.json())
