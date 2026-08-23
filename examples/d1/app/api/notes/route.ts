@@ -4,8 +4,7 @@ import { notes } from "../../../db/schema";
 
 function toRouteErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error";
-  const detail =
-    error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  const detail = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
   const combined = `${message}\n${detail}`;
 
   if (combined.includes("no such table") || combined.includes('from "notes"')) {
@@ -18,18 +17,11 @@ function toRouteErrorMessage(error: unknown) {
 export async function GET() {
   try {
     const db = getDb();
-    const rows = await db
-      .select()
-      .from(notes)
-      .orderBy(desc(notes.createdAt), desc(notes.id))
-      .limit(20);
+    const rows = await db.select().from(notes).orderBy(desc(notes.createdAt), desc(notes.id)).limit(20);
 
     return Response.json({ notes: rows });
   } catch (error) {
-    return Response.json(
-      { error: toRouteErrorMessage(error) },
-      { status: 500 }
-    );
+    return Response.json({ error: toRouteErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -50,9 +42,6 @@ export async function POST(request: Request) {
     const [note] = await db.insert(notes).values({ title, content }).returning();
     return Response.json({ note }, { status: 201 });
   } catch (error) {
-    return Response.json(
-      { error: toRouteErrorMessage(error) },
-      { status: 500 }
-    );
+    return Response.json({ error: toRouteErrorMessage(error) }, { status: 500 });
   }
 }

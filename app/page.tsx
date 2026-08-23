@@ -1,227 +1,1039 @@
 "use client";
 
-import { FormEvent, Fragment, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import NaverMap, { type RouteCacheScope, type RouteLeg } from "./NaverMap";
+import DateRangePicker from "./components/DateRangePicker";
+import { CategoryManagerDialog, PlaceCategoryDialog, SaveCategoryDialog } from "./components/dialogs/CategoryDialogs";
+import SectionTitle from "./components/SectionTitle";
+import AppHeader from "./components/layout/AppHeader";
+import BottomNavigation from "./components/layout/BottomNavigation";
+import DaySwipePreview from "./components/schedule/DaySwipePreview";
+import DaySwitcher from "./components/schedule/DaySwitcher";
+import ScheduleTimeline from "./components/schedule/ScheduleTimeline";
+import SavedPlacesPage from "./components/saved-places/SavedPlacesPage";
+import SavedPlaceSearchOverlay from "./components/search/SavedPlaceSearchOverlay";
+import PlaceSearchPage from "./components/search/PlaceSearchPage";
+import TripList from "./components/trip/TripList";
+import TripHeader from "./components/trip/TripHeader";
+import { comparableDate, dateInputValue, isoDate, nextDateLabel, nextIsoDate } from "./domain/date";
+import { addPlaceCategory, inferSavedCategory, placeCategories } from "./domain/place";
+import type {
+  AppTab,
+  DayPlan,
+  Place,
+  RouteEndpoint,
+  SavedCategory,
+  TextEditor,
+  TripCreator,
+  TripPlan,
+} from "./domain/types";
+import { usePlaceSearch } from "./hooks/usePlaceSearch";
+import { useSavedPlaces } from "./hooks/useSavedPlaces";
+import { useCloudSync } from "./hooks/useCloudSync";
+import { useTrips } from "./hooks/useTrips";
+import { useDaySwipe } from "./hooks/useDaySwipe";
+import { useScheduleDrag } from "./hooks/useScheduleDrag";
 
-declare global { interface Window { Kakao?: { init:(key:string)=>void;isInitialized:()=>boolean;Navi:{start:(options:{name:string;x:number;y:number;coordType:"wgs84"})=>void} } } }
+export type { Place, RouteEndpoint } from "./domain/types";
 
-type SavedCategory = string;
-export type Place = { id: string; name: string; category: string; address: string; longitude: number; latitude: number; link?: string; memo?: string; savedCategory?: SavedCategory; savedCategories?: SavedCategory[] };
-export type RouteEndpoint = { name: string; longitude: number; latitude: number };
-type DayPlan = { id: string; label: string; date: string; dateValue?: string; start: RouteEndpoint; goal: RouteEndpoint; places: Place[]; candidates?: Record<string,Place[]> };
-type TripPlan = { id: string; title: string; days: DayPlan[]; updatedAt: number };
-type TextEditor = { kind:"trip"|"memo"|"category-add"|"category-rename"; title:string; value:string; tripId?:string; place?:Place; category?:string };
-type TripCreator = { title:string; startDate:string; endDate:string; error:string };
-const initialSavedPlaces: Place[] = [];
-const initialDays: DayPlan[] = [
-  {id:"day-1",label:"1일차",date:"날짜 미정",start:{name:"출발지 미정",longitude:127.5,latitude:36.5},goal:{name:"목적지 미정",longitude:127.5,latitude:36.5},places:[]},
-];
-const initialTrips: TripPlan[] = [{id:"trip-new",title:"새 여행",days:initialDays,updatedAt:Date.now()}];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const KAKAO_JAVASCRIPT_KEY = process.env.NEXT_PUBLIC_KAKAO_JAVASCRIPT_KEY ?? "";
 const CURRENT_USER_ID = 1;
-const DEFAULT_SAVED_CATEGORIES:SavedCategory[]=["맛집","카페","숙소","관광","휴게소","기타"];
-let kakaoSdkPromise:Promise<void>|null=null;
-
-function nextDateLabel(value:string){const match=value.match(/^(\d{1,2})월\s*(\d{1,2})일$/);if(!match)return "날짜 미정";const date=new Date(2026,Number(match[1])-1,Number(match[2])+1);return `${date.getMonth()+1}월 ${date.getDate()}일`}
-function dateInputValue(value:string){const match=value.match(/^(\d{1,2})월\s*(\d{1,2})일$/);if(!match)return new Date().toISOString().slice(0,10);return `${new Date().getFullYear()}-${String(Number(match[1])).padStart(2,"0")}-${String(Number(match[2])).padStart(2,"0")}`}
-function nextIsoDate(value?:string){if(!value)return undefined;const date=new Date(`${value}T00:00:00`);date.setDate(date.getDate()+1);return isoDate(date.getFullYear(),date.getMonth(),date.getDate())}
-function comparableDate(day?:DayPlan){if(!day)return null;if(day.dateValue)return day.dateValue;const match=day.date.match(/^(\d{1,2})월\s*(\d{1,2})일$/);return match?isoDate(new Date().getFullYear(),Number(match[1])-1,Number(match[2])):null}
-function initialTrip(trips:TripPlan[]){const today=isoDate(new Date().getFullYear(),new Date().getMonth(),new Date().getDate());const dated=trips.map((trip)=>({trip,start:comparableDate(trip.days[0]),end:comparableDate(trip.days.at(-1))}));const current=dated.filter((item)=>item.start&&item.end&&item.start<=today&&item.end>=today).sort((a,b)=>(a.start??"").localeCompare(b.start??""))[0];if(current)return current.trip;const upcoming=dated.filter((item)=>item.start&&item.start>today).sort((a,b)=>(a.start??"").localeCompare(b.start??""))[0];if(upcoming)return upcoming.trip;return [...trips].sort((a,b)=>b.updatedAt-a.updatedAt)[0]??trips[0]}
-function tripStatusLabel(trip:TripPlan,activeTripId:string){const today=isoDate(new Date().getFullYear(),new Date().getMonth(),new Date().getDate());const start=comparableDate(trip.days[0]);if(start&&start>today)return "예정";return trip.id===activeTripId?"진행 중":"저장됨"}
-function pointDistance(from:{longitude:number;latitude:number},to:{longitude:number;latitude:number}){const radius=6371;const radians=(value:number)=>value*Math.PI/180;const latitude=radians(to.latitude-from.latitude);const longitude=radians(to.longitude-from.longitude);const value=Math.sin(latitude/2)**2+Math.cos(radians(from.latitude))*Math.cos(radians(to.latitude))*Math.sin(longitude/2)**2;return radius*2*Math.atan2(Math.sqrt(value),Math.sqrt(1-value))}
-function distanceLabel(kilometers:number){return kilometers<1?`${Math.max(1,Math.round(kilometers*1000))}m`:kilometers<10?`${kilometers.toFixed(1)}km`:`${Math.round(kilometers)}km`}
-function inferSavedCategory(place:Place):SavedCategory{const value=`${place.name} ${place.category}`.toLowerCase();if(/휴게소/.test(value))return "휴게소";if(/카페|커피|coffee|베이커리|디저트/.test(value))return "카페";if(/호텔|모텔|펜션|리조트|숙박|게스트하우스|캠핑/.test(value))return "숙소";if(/음식|식당|한식|중식|일식|분식|레스토랑|맛집|치킨|피자/.test(value))return "맛집";if(/관광|공원|박물관|미술관|해수욕장|전망대|테마파크|명소/.test(value))return "관광";return "기타"}
-function placeCategories(place:Place):SavedCategory[]{return place.savedCategories?.length?[...new Set(place.savedCategories)]:[place.savedCategory??inferSavedCategory(place)]}
-function addPlaceCategory(place:Place,category:SavedCategory):Place{return {...place,savedCategories:[...new Set([...placeCategories(place),category])],savedCategory:undefined}}
-function loadKakaoSdk(){if(window.Kakao)return Promise.resolve();if(kakaoSdkPromise)return kakaoSdkPromise;kakaoSdkPromise=new Promise((resolve,reject)=>{const script=document.createElement("script");script.src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js";script.async=true;script.onload=()=>resolve();script.onerror=()=>reject(new Error("카카오내비 연결 모듈을 불러오지 못했습니다."));document.head.appendChild(script)});return kakaoSdkPromise}
-async function openKakaoNavi(place:{name:string;longitude:number;latitude:number}){if(!KAKAO_JAVASCRIPT_KEY){window.alert("카카오내비 JavaScript 키가 아직 설정되지 않았습니다.");return}try{await loadKakaoSdk();if(!window.Kakao)throw new Error("카카오내비를 실행하지 못했습니다.");if(!window.Kakao.isInitialized())window.Kakao.init(KAKAO_JAVASCRIPT_KEY);window.Kakao.Navi.start({name:place.name,x:place.longitude,y:place.latitude,coordType:"wgs84"})}catch(error){window.alert(error instanceof Error?error.message:"카카오내비를 실행하지 못했습니다.")}}
-function isoDate(year:number,month:number,day:number){return `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`}
-function shortDate(value:string){if(!value)return "";const date=new Date(`${value}T00:00:00`);return `${date.getMonth()+1}월 ${date.getDate()}일`}
-
-function DateRangePicker({startDate,endDate,onChange}:{startDate:string;endDate:string;onChange:(startDate:string,endDate:string)=>void}){
-  const initial=startDate?new Date(`${startDate}T00:00:00`):new Date();
-  const [month,setMonth]=useState(()=>new Date(initial.getFullYear(),initial.getMonth(),1));
-  const firstDay=new Date(month.getFullYear(),month.getMonth(),1).getDay();
-  const dayCount=new Date(month.getFullYear(),month.getMonth()+1,0).getDate();
-  const cells=Array.from({length:firstDay+dayCount},(_,index)=>index<firstDay?null:index-firstDay+1);
-  const select=(day:number)=>{const value=isoDate(month.getFullYear(),month.getMonth(),day);if(!startDate||endDate){onChange(value,"");return}if(value<startDate){onChange(value,"");return}onChange(startDate,value)};
-  const nights=startDate&&endDate?Math.floor((new Date(`${endDate}T00:00:00`).getTime()-new Date(`${startDate}T00:00:00`).getTime())/86400000)+1:0;
-  return <div className="range-picker"><div className="range-summary"><div><span>여행 기간</span><strong>{startDate?shortDate(startDate):"시작일 선택"} <i>→</i> {endDate?shortDate(endDate):startDate?"종료일 선택":"날짜 미정"}</strong></div>{startDate&&<button type="button" onClick={()=>onChange("","")}>초기화</button>}</div><div className="calendar-heading"><button type="button" onClick={()=>setMonth((value)=>new Date(value.getFullYear(),value.getMonth()-1,1))} aria-label="이전 달">‹</button><strong>{month.getFullYear()}년 {month.getMonth()+1}월</strong><button type="button" onClick={()=>setMonth((value)=>new Date(value.getFullYear(),value.getMonth()+1,1))} aria-label="다음 달">›</button></div><div className="calendar-weekdays">{["일","월","화","수","목","금","토"].map((day)=><span key={day}>{day}</span>)}</div><div className="calendar-days">{cells.map((day,index)=>{if(day===null)return <span key={`empty-${index}`}/>;const value=isoDate(month.getFullYear(),month.getMonth(),day);const selected=value===startDate||value===endDate;const inRange=Boolean(startDate&&endDate&&value>startDate&&value<endDate);return <button type="button" key={value} className={`${selected?"selected ":""}${inRange?"in-range ":""}${value===startDate?"range-start ":""}${value===endDate?"range-end":""}`} onClick={()=>select(day)} aria-pressed={selected}>{day}</button>})}</div><p>{startDate&&!endDate?"종료일을 선택하세요. 같은 날을 다시 누르면 당일치기예요.":nights?`${nights}일 여행 일정으로 만들어집니다.`:"날짜 없이 여행을 만들어도 나중에 지정할 수 있어요."}</p></div>
-}
 
 export default function Home() {
-  const [tab,setTab]=useState<"plan"|"map"|"trips"|"saved">("plan");
-  const previousTab=useRef<"plan"|"map"|"trips"|"saved">("plan");
-  const [savedSearchOpen,setSavedSearchOpen]=useState(false);
-  const [trips,setTrips]=useState<TripPlan[]>(initialTrips);
-  const [activeTripId,setActiveTripId]=useState("trip-new");
-  const [tripsLoaded,setTripsLoaded]=useState(false);
-  const [cloudReady,setCloudReady]=useState(false);
-  const [days,setDays]=useState<DayPlan[]>(initialDays);
-  const [activeDayId,setActiveDayId]=useState("day-1");
-  const [savedPlaces,setSavedPlaces]=useState<Place[]>([]);
-  const [savedCategories,setSavedCategories]=useState<SavedCategory[]>(DEFAULT_SAVED_CATEGORIES);
-  const SAVED_CATEGORIES=savedCategories;
-  const [savedCategory,setSavedCategory]=useState<"전체"|SavedCategory>("전체");
-  const [routeSavedCategory,setRouteSavedCategory]=useState<"전체"|SavedCategory>("전체");
-  const [categoryManagerOpen,setCategoryManagerOpen]=useState(false);
-  const [categoryPlace,setCategoryPlace]=useState<Place|null>(null);
-  const [pendingSavePlace,setPendingSavePlace]=useState<Place|null>(null);
-  const [pendingSaveCategories,setPendingSaveCategories]=useState<SavedCategory[]>([]);
-  const [editor,setEditor]=useState<TextEditor|null>(null);
-  const [tripCreator,setTripCreator]=useState<TripCreator|null>(null);
-  const [dateEditor,setDateEditor]=useState<{dayId:string;value:string}|null>(null);
-  const [editorError,setEditorError]=useState("");
-  const [savedLoaded,setSavedLoaded]=useState(false);
-  const [dragIndex,setDragIndex]=useState<number|null>(null);
-  const draggedIndex=useRef<number|null>(null);
-  const [candidatePreviews,setCandidatePreviews]=useState<Record<string,string>>({});
-  const daySwipe=useRef<{x:number;y:number;time:number}|null>(null);
-  const [daySwipeOffset,setDaySwipeOffset]=useState(0);
-  const [daySwipeAnimating,setDaySwipeAnimating]=useState(false);
-  const [mapPinned,setMapPinned]=useState(false);
-  const [query,setQuery]=useState("");
-  const [results,setResults]=useState<Place[]>([]);
-  const [searching,setSearching]=useState(false);
-  const [searchError,setSearchError]=useState("");
-  const [source,setSource]=useState<"kakao"|"mixed"|"local"|"geocoding"|"">("");
-  const [insertIndex,setInsertIndex]=useState<number|null>(null);
-  const [candidateFor,setCandidateFor]=useState<string|null>(null);
-  const [endpointTarget,setEndpointTarget]=useState<"start"|"goal"|null>(null);
-  const [legs,setLegs]=useState<RouteLeg[]>([]);
-  const savedPlacesRef=useRef<HTMLDivElement>(null);
-  const activeDay=days.find((day)=>day.id===activeDayId)??days[0];
-  const activeDayIndex=days.findIndex((day)=>day.id===activeDayId);
-  const previousDay=activeDayIndex>0?days[activeDayIndex-1]:null;
-  const nextDay=activeDayIndex>=0&&activeDayIndex<days.length-1?days[activeDayIndex+1]:null;
-  const activeTrip=trips.find((trip)=>trip.id===activeTripId)??trips[0];
-  const places=activeDay?.places??[];
-  const mapPlaces=useMemo(()=>places.map((place)=>activeDay.candidates?.[place.id]?.find((candidate)=>candidate.id===candidatePreviews[place.id])??place),[places,activeDay.candidates,candidatePreviews]);
-  const routeCacheScope=useMemo<RouteCacheScope>(()=>({userId:CURRENT_USER_ID,tripId:activeTripId,dayId:activeDayId,mode:Object.keys(candidatePreviews).length?"preview":"schedule"}),[activeTripId,activeDayId,candidatePreviews]);
-  const searchPreviousPlace=useMemo(()=>{if(insertIndex!==null)return insertIndex===0?activeDay.start:places[insertIndex-1]??activeDay.start;if(candidateFor!==null){const index=places.findIndex((place)=>place.id===candidateFor);return index<=0?activeDay.start:places[index-1]}if(endpointTarget==="goal")return places.at(-1)??activeDay.start;return null},[insertIndex,candidateFor,endpointTarget,activeDay.start,places]);
-  const searchNextPlace=useMemo(()=>{if(insertIndex!==null)return insertIndex===places.length?activeDay.goal:places[insertIndex]??activeDay.goal;if(candidateFor!==null){const index=places.findIndex((place)=>place.id===candidateFor);return index<0||index===places.length-1?activeDay.goal:places[index+1]}if(endpointTarget==="start")return places[0]??activeDay.goal;return null},[insertIndex,candidateFor,endpointTarget,activeDay.goal,places]);
-  const choosingPlace=insertIndex!==null||candidateFor!==null||endpointTarget!==null;
-  const insertionFrom=insertIndex===null?"":`${activeDay.label} · ${insertIndex===0?activeDay.start.name:places[insertIndex-1]?.name}`;
-  const insertionTo=insertIndex===null?"":`( 추가할 장소 ) → ${insertIndex===places.length?activeDay.goal.name:places[insertIndex]?.name}`;
-  const filteredSavedPlaces=savedCategory==="전체"?savedPlaces:savedPlaces.filter((place)=>placeCategories(place).includes(savedCategory));
-  const routeSavedPlaces=routeSavedCategory==="전체"?savedPlaces:savedPlaces.filter((place)=>placeCategories(place).includes(routeSavedCategory));
-  const displayedTrips=useMemo(()=>{const today=isoDate(new Date().getFullYear(),new Date().getMonth(),new Date().getDate());const closest=[...trips].filter((trip)=>{const start=comparableDate(trip.days[0]);return Boolean(start&&start>today)}).sort((a,b)=>(comparableDate(a.days[0])??"").localeCompare(comparableDate(b.days[0])??""))[0];return closest?[closest,...trips.filter((trip)=>trip.id!==closest.id)]:trips},[trips]);
+  const [tab, setTab] = useState<AppTab>("plan");
+  const [savedSearchOpen, setSavedSearchOpen] = useState(false);
+  const { trips, setTrips, activeTripId, setActiveTripId, tripsLoaded, days, setDays, activeDayId, setActiveDayId } =
+    useTrips();
+  const { savedPlaces, setSavedPlaces, savedCategories, setSavedCategories, savedLoaded } = useSavedPlaces();
+  const SAVED_CATEGORIES = savedCategories;
+  const [savedCategory, setSavedCategory] = useState<"전체" | SavedCategory>("전체");
+  const [routeSavedCategory, setRouteSavedCategory] = useState<"전체" | SavedCategory>("전체");
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [categoryPlace, setCategoryPlace] = useState<Place | null>(null);
+  const [pendingSavePlace, setPendingSavePlace] = useState<Place | null>(null);
+  const [pendingSaveCategories, setPendingSaveCategories] = useState<SavedCategory[]>([]);
+  const [editor, setEditor] = useState<TextEditor | null>(null);
+  const [tripCreator, setTripCreator] = useState<TripCreator | null>(null);
+  const [dateEditor, setDateEditor] = useState<{ dayId: string; value: string } | null>(null);
+  const [editorError, setEditorError] = useState("");
+  const [candidatePreviews, setCandidatePreviews] = useState<Record<string, string>>({});
+  const [mapPinned, setMapPinned] = useState(false);
+  const [insertIndex, setInsertIndex] = useState<number | null>(null);
+  const [candidateFor, setCandidateFor] = useState<string | null>(null);
+  const [endpointTarget, setEndpointTarget] = useState<"start" | "goal" | null>(null);
+  const [legs, setLegs] = useState<RouteLeg[]>([]);
+  const savedPlacesRef = useRef<HTMLDivElement>(null);
+  const activeDay = days.find((day) => day.id === activeDayId) ?? days[0];
+  const activeDayIndex = days.findIndex((day) => day.id === activeDayId);
+  const previousDay = activeDayIndex > 0 ? days[activeDayIndex - 1] : null;
+  const nextDay = activeDayIndex >= 0 && activeDayIndex < days.length - 1 ? days[activeDayIndex + 1] : null;
+  const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0];
+  const places = useMemo(() => activeDay?.places ?? [], [activeDay]);
+  const mapPlaces = useMemo(
+    () =>
+      places.map(
+        (place) =>
+          activeDay.candidates?.[place.id]?.find((candidate) => candidate.id === candidatePreviews[place.id]) ?? place,
+      ),
+    [places, activeDay.candidates, candidatePreviews],
+  );
+  const routeCacheScope = useMemo<RouteCacheScope>(
+    () => ({
+      userId: CURRENT_USER_ID,
+      tripId: activeTripId,
+      dayId: activeDayId,
+      mode: Object.keys(candidatePreviews).length ? "preview" : "schedule",
+    }),
+    [activeTripId, activeDayId, candidatePreviews],
+  );
+  const searchPreviousPlace = useMemo(() => {
+    if (insertIndex !== null) return insertIndex === 0 ? activeDay.start : (places[insertIndex - 1] ?? activeDay.start);
+    if (candidateFor !== null) {
+      const index = places.findIndex((place) => place.id === candidateFor);
+      return index <= 0 ? activeDay.start : places[index - 1];
+    }
+    if (endpointTarget === "goal") return places.at(-1) ?? activeDay.start;
+    return null;
+  }, [insertIndex, candidateFor, endpointTarget, activeDay.start, places]);
+  const searchNextPlace = useMemo(() => {
+    if (insertIndex !== null)
+      return insertIndex === places.length ? activeDay.goal : (places[insertIndex] ?? activeDay.goal);
+    if (candidateFor !== null) {
+      const index = places.findIndex((place) => place.id === candidateFor);
+      return index < 0 || index === places.length - 1 ? activeDay.goal : places[index + 1];
+    }
+    if (endpointTarget === "start") return places[0] ?? activeDay.goal;
+    return null;
+  }, [insertIndex, candidateFor, endpointTarget, activeDay.goal, places]);
+  const searchCandidateMain = useMemo(
+    () => (candidateFor ? (places.find((place) => place.id === candidateFor) ?? null) : null),
+    [candidateFor, places],
+  );
+  const { query, setQuery, results, setResults, searching, searchError, setSearchError, source, search } =
+    usePlaceSearch({
+      apiBase: API_BASE,
+      previousPlace: searchPreviousPlace,
+      nextPlace: searchNextPlace,
+      candidateMain: searchCandidateMain,
+    });
+  const choosingPlace = insertIndex !== null || candidateFor !== null || endpointTarget !== null;
+  const insertionFrom =
+    insertIndex === null
+      ? ""
+      : `${activeDay.label} · ${insertIndex === 0 ? activeDay.start.name : places[insertIndex - 1]?.name}`;
+  const insertionTo =
+    insertIndex === null
+      ? ""
+      : `( 추가할 장소 ) → ${insertIndex === places.length ? activeDay.goal.name : places[insertIndex]?.name}`;
+  const filteredSavedPlaces =
+    savedCategory === "전체"
+      ? savedPlaces
+      : savedPlaces.filter((place) => placeCategories(place).includes(savedCategory));
+  const routeSavedPlaces =
+    routeSavedCategory === "전체"
+      ? savedPlaces
+      : savedPlaces.filter((place) => placeCategories(place).includes(routeSavedCategory));
+  const displayedTrips = useMemo(() => {
+    const today = isoDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    const closest = [...trips]
+      .filter((trip) => {
+        const start = comparableDate(trip.days[0]);
+        return Boolean(start && start > today);
+      })
+      .sort((a, b) => (comparableDate(a.days[0]) ?? "").localeCompare(comparableDate(b.days[0]) ?? ""))[0];
+    return closest ? [closest, ...trips.filter((trip) => trip.id !== closest.id)] : trips;
+  }, [trips]);
+  useCloudSync({
+    apiBase: API_BASE,
+    tripsLoaded,
+    savedLoaded,
+    trips,
+    savedPlaces,
+    savedCategories,
+    setTrips,
+    setActiveTripId,
+    setActiveDayId,
+    setSavedPlaces,
+    setSavedCategories,
+  });
+  const {
+    offset: daySwipeOffset,
+    animating: daySwipeAnimating,
+    begin: beginDaySwipe,
+    move: moveDaySwipe,
+    end: endDaySwipe,
+    cancel: cancelDaySwipe,
+  } = useDaySwipe({ days, activeDayId, onSelectDay: selectDay });
+  const { dragIndex, beginDrag, continueDrag, endDrag } = useScheduleDrag({ places, setPlaces });
 
-  useEffect(()=>{try{const stored=localStorage.getItem("gildam-saved-places");const storedCategories=localStorage.getItem("gildam-saved-categories");setSavedPlaces(stored?JSON.parse(stored) as Place[]:initialSavedPlaces);if(storedCategories){const parsed=JSON.parse(storedCategories) as string[];if(parsed.length)setSavedCategories(parsed)}}catch{setSavedPlaces(initialSavedPlaces)}finally{setSavedLoaded(true)}},[]);
-  useEffect(()=>{if(savedLoaded){localStorage.setItem("gildam-saved-places",JSON.stringify(savedPlaces));localStorage.setItem("gildam-saved-categories",JSON.stringify(savedCategories))}},[savedLoaded,savedPlaces,savedCategories]);
-  useEffect(()=>{try{const stored=localStorage.getItem("gildam-trips");const legacy=localStorage.getItem("gildam-trip-days");const parsed=stored?JSON.parse(stored) as TripPlan[]:null;if(parsed?.length){const selected=initialTrip(parsed);setTrips(parsed);setActiveTripId(selected.id);setDays(selected.days);setActiveDayId(selected.days[0].id)}else if(legacy){const legacyDays=JSON.parse(legacy) as DayPlan[];const migrated=[{...initialTrips[0],days:legacyDays}];setTrips(migrated);setDays(legacyDays)}}catch{}finally{setTripsLoaded(true)}},[]);
-  useEffect(()=>{if(tripsLoaded)setTrips((items)=>items.map((trip)=>trip.id===activeTripId?{...trip,days,updatedAt:Date.now()}:trip))},[activeTripId,days,tripsLoaded]);
-  useEffect(()=>{if(tripsLoaded)localStorage.setItem("gildam-trips",JSON.stringify(trips))},[trips,tripsLoaded]);
-  useEffect(()=>{if(!API_BASE||!tripsLoaded||!savedLoaded)return;let cancelled=false;(async()=>{let deviceId=localStorage.getItem("gildam-device-id");if(!deviceId){deviceId=`device_${crypto.randomUUID().replaceAll("-","")}`;localStorage.setItem("gildam-device-id",deviceId)}try{const response=await fetch(`${API_BASE}/api/state`,{headers:{"x-gildam-device":deviceId}});if(response.ok){const data=await response.json() as {trips?:TripPlan[];savedPlaces?:Place[];savedCategories?:string[]};if(!cancelled&&data.trips?.length){const selected=initialTrip(data.trips);setTrips(data.trips);setActiveTripId(selected.id);setDays(selected.days);setActiveDayId(selected.days[0].id)}if(!cancelled&&data.savedPlaces?.length)setSavedPlaces(data.savedPlaces);if(!cancelled&&data.savedCategories?.length)setSavedCategories(data.savedCategories)}}finally{if(!cancelled)setCloudReady(true)}})();return()=>{cancelled=true}},[tripsLoaded,savedLoaded]);
-  useEffect(()=>{if(!API_BASE||!cloudReady)return;const timer=setTimeout(()=>{const deviceId=localStorage.getItem("gildam-device-id");if(deviceId)fetch(`${API_BASE}/api/state`,{method:"PUT",headers:{"content-type":"application/json","x-gildam-device":deviceId},body:JSON.stringify({trips,savedPlaces,savedCategories})}).catch(()=>{})},700);return()=>clearTimeout(timer)},[cloudReady,trips,savedPlaces,savedCategories]);
-  useEffect(()=>{document.documentElement.classList.toggle("inserting-place",insertIndex!==null);return()=>document.documentElement.classList.remove("inserting-place")},[insertIndex]);
-  useEffect(()=>{const root=document.documentElement;if(insertIndex===null){root.style.removeProperty("--insertion-from");root.style.removeProperty("--insertion-to");root.style.removeProperty("--insertion-day");return}const from=insertIndex===0?activeDay.start.name:places[insertIndex-1]?.name??"이전 장소";const to=insertIndex===places.length?activeDay.goal.name:places[insertIndex]?.name??"다음 장소";root.style.setProperty("--insertion-from",JSON.stringify(from));root.style.setProperty("--insertion-to",JSON.stringify(to));root.style.setProperty("--insertion-day",JSON.stringify(`${activeDay.label} · 장소 추가`));return()=>{root.style.removeProperty("--insertion-from");root.style.removeProperty("--insertion-to");root.style.removeProperty("--insertion-day")}},[insertIndex,activeDay,places]);
-  useEffect(()=>{if(previousTab.current==="saved"&&tab==="map"){setSavedSearchOpen(true);setResults([]);setSearchError("");setQuery("");setTab("saved");previousTab.current="saved";return}if(tab!=="saved")setSavedSearchOpen(false);previousTab.current=tab},[tab]);
-  useEffect(()=>{document.documentElement.classList.toggle("saved-searching",savedSearchOpen);return()=>document.documentElement.classList.remove("saved-searching")},[savedSearchOpen]);
-  useEffect(()=>{document.documentElement.classList.toggle("map-pinned",mapPinned);return()=>document.documentElement.classList.remove("map-pinned")},[mapPinned]);
-  useEffect(()=>{if(tab!=="map"||!choosingPlace)return;requestAnimationFrame(()=>{window.scrollTo({top:0,left:0,behavior:"auto"});document.querySelector<HTMLInputElement>(".map-page .place-search input")?.focus({preventScroll:true})})},[tab,choosingPlace]);
-  useEffect(()=>{if(!savedSearchOpen)return;requestAnimationFrame(()=>{window.scrollTo({top:0,left:0,behavior:"auto"});document.querySelector<HTMLElement>(".saved-page")?.scrollTo({top:0,left:0,behavior:"auto"});document.querySelector<HTMLInputElement>(".saved-inline-search input")?.focus({preventScroll:true})})},[savedSearchOpen]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("inserting-place", insertIndex !== null);
+    return () => document.documentElement.classList.remove("inserting-place");
+  }, [insertIndex]);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (insertIndex === null) {
+      root.style.removeProperty("--insertion-from");
+      root.style.removeProperty("--insertion-to");
+      root.style.removeProperty("--insertion-day");
+      return;
+    }
+    const from = insertIndex === 0 ? activeDay.start.name : (places[insertIndex - 1]?.name ?? "이전 장소");
+    const to = insertIndex === places.length ? activeDay.goal.name : (places[insertIndex]?.name ?? "다음 장소");
+    root.style.setProperty("--insertion-from", JSON.stringify(from));
+    root.style.setProperty("--insertion-to", JSON.stringify(to));
+    root.style.setProperty("--insertion-day", JSON.stringify(`${activeDay.label} · 장소 추가`));
+    return () => {
+      root.style.removeProperty("--insertion-from");
+      root.style.removeProperty("--insertion-to");
+      root.style.removeProperty("--insertion-day");
+    };
+  }, [insertIndex, activeDay, places]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("saved-searching", savedSearchOpen);
+    return () => document.documentElement.classList.remove("saved-searching");
+  }, [savedSearchOpen]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("map-pinned", mapPinned);
+    return () => document.documentElement.classList.remove("map-pinned");
+  }, [mapPinned]);
+  useEffect(() => {
+    if (tab !== "map" || !choosingPlace) return;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.querySelector<HTMLInputElement>(".map-page .place-search input")?.focus({ preventScroll: true });
+    });
+  }, [tab, choosingPlace]);
+  useEffect(() => {
+    if (!savedSearchOpen) return;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.querySelector<HTMLElement>(".saved-page")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.querySelector<HTMLInputElement>(".saved-inline-search input")?.focus({ preventScroll: true });
+    });
+  }, [savedSearchOpen]);
 
-  function setPlaces(update:Place[]|((items:Place[])=>Place[])){setDays((items)=>items.map((day)=>day.id===activeDayId?{...day,places:typeof update==="function"?update(day.places):update}:day))}
-  function closeSavedSearch(){if(document.activeElement instanceof HTMLElement)document.activeElement.blur();setSavedSearchOpen(false);setResults([]);setSearchError("");setQuery("")}
-  function selectDay(id:string){setActiveDayId(id);setLegs([]);setCandidatePreviews({});setInsertIndex(null);setCandidateFor(null);setEndpointTarget(null);setResults([]);setSearchError("")}
-  function previewCandidate(mainId:string,place?:Place){setCandidatePreviews((items)=>{if(!place){const next={...items};delete next[mainId];return next}return {...items,[mainId]:place.id}});setLegs([])}
-  function beginDaySwipe(event:ReactTouchEvent<HTMLElement>){const target=event.target as HTMLElement;if(target.closest("button,a,input,textarea,select,.candidate-carousel,.day-switcher,.plan-map,.drag-handle")){daySwipe.current=null;return}const touch=event.touches[0];daySwipe.current={x:touch.clientX,y:touch.clientY,time:Date.now()};setDaySwipeAnimating(false)}
-  function moveDaySwipe(event:ReactTouchEvent<HTMLElement>){const start=daySwipe.current;if(!start)return;const touch=event.touches[0];const dx=touch.clientX-start.x;const dy=touch.clientY-start.y;if(Math.abs(dy)>Math.abs(dx)&&Math.abs(dy)>10){daySwipe.current=null;setDaySwipeOffset(0);return}if(Math.abs(dx)<8)return;const index=days.findIndex((day)=>day.id===activeDayId);const atEdge=(dx>0&&index===0)||(dx<0&&index===days.length-1);setDaySwipeOffset(atEdge?dx*.22:Math.max(-150,Math.min(150,dx)))}
-  function cancelDaySwipe(){daySwipe.current=null;setDaySwipeAnimating(false);setDaySwipeOffset(0)}
-  function endDaySwipe(event:ReactTouchEvent<HTMLElement>){const start=daySwipe.current;daySwipe.current=null;if(!start){setDaySwipeAnimating(false);setDaySwipeOffset(0);return}const touch=event.changedTouches[0];const dx=touch.clientX-start.x;const dy=touch.clientY-start.y;const index=days.findIndex((day)=>day.id===activeDayId);const next=dx<0?index+1:index-1;const shouldMove=Date.now()-start.time<=900&&Math.abs(dx)>=64&&Math.abs(dx)>=Math.abs(dy)*1.25&&next>=0&&next<days.length;setDaySwipeAnimating(true);if(!shouldMove){setDaySwipeOffset(0);window.setTimeout(()=>setDaySwipeAnimating(false),220);return}setDaySwipeOffset(dx<0?-window.innerWidth:window.innerWidth);window.setTimeout(()=>{selectDay(days[next].id);setDaySwipeAnimating(false);setDaySwipeOffset(0)},220)}
-  function saveDayDate(){if(!dateEditor)return;const targetIndex=days.findIndex((day)=>day.id===dateEditor.dayId);if(targetIndex<0)return;const start=new Date(`${dateEditor.value}T00:00:00`);setDays((items)=>items.map((day,index)=>{if(index<targetIndex)return day;const next=new Date(start);next.setDate(start.getDate()+index-targetIndex);return {...day,date:`${next.getMonth()+1}월 ${next.getDate()}일`,dateValue:isoDate(next.getFullYear(),next.getMonth(),next.getDate())}}));setDateEditor(null)}
-  function addDay(){const previous=days[days.length-1];if(previous.goal.name==="목적지 미정"){window.alert(`${previous.label} 목적지를 먼저 설정해 주세요.`);setActiveDayId(previous.id);return}const id=`day-${Date.now()}`;const next:DayPlan={id,label:`${days.length+1}일차`,date:nextDateLabel(previous.date),dateValue:nextIsoDate(previous.dateValue),start:previous.goal,goal:{name:"목적지 미정",longitude:previous.goal.longitude,latitude:previous.goal.latitude},places:[]};setDays((items)=>[...items,next]);setActiveDayId(id);setLegs([])}
-  function removeDay(id:string){if(days.length<=1)return;const target=days.find((day)=>day.id===id);if(!target||!window.confirm(`${target.label}(${target.date}) 일정과 장소를 모두 삭제할까요?`))return;const index=days.findIndex((day)=>day.id===id);const remaining=days.filter((day)=>day.id!==id).map((day,i)=>({...day,label:`${i+1}일차`}));setDays(remaining);if(id===activeDayId)setActiveDayId(remaining[Math.max(0,index-1)]?.id??remaining[0].id);setLegs([])}
-  function openTrip(id:string){const trip=trips.find((item)=>item.id===id);if(!trip)return;setActiveTripId(id);setDays(trip.days);setActiveDayId(trip.days[0].id);setLegs([]);setTab("plan")}
-  function addTrip(){setTripCreator({title:"",startDate:"",endDate:"",error:""})}
-  function createTrip(){if(!tripCreator)return;const title=tripCreator.title.trim();if(!title){setTripCreator({...tripCreator,error:"여행 이름을 입력해 주세요."});return}let firstDate=tripCreator.startDate||tripCreator.endDate;let dayCount=1;if(tripCreator.startDate&&tripCreator.endDate){const start=new Date(`${tripCreator.startDate}T00:00:00`);const end=new Date(`${tripCreator.endDate}T00:00:00`);dayCount=Math.floor((end.getTime()-start.getTime())/86400000)+1;if(dayCount<1){setTripCreator({...tripCreator,error:"종료일은 시작일보다 빠를 수 없어요."});return}}const timestamp=Date.now();const tripDays:DayPlan[]=Array.from({length:dayCount},(_,index)=>{let date="날짜 미정";let dateValue:undefined|string;if(firstDate){const value=new Date(`${firstDate}T00:00:00`);value.setDate(value.getDate()+index);date=`${value.getMonth()+1}월 ${value.getDate()}일`;dateValue=isoDate(value.getFullYear(),value.getMonth(),value.getDate())}return {id:`day-${timestamp}-${index+1}`,label:`${index+1}일차`,date,dateValue,start:{name:"출발지 미정",longitude:127.5,latitude:36.5},goal:{name:"목적지 미정",longitude:127.5,latitude:36.5},places:[]}});const trip:TripPlan={id:`trip-${timestamp}`,title,days:tripDays,updatedAt:timestamp};setSavedCategories((items)=>items.includes(title)?items:[...items,title]);setTrips((items)=>[trip,...items]);setActiveTripId(trip.id);setDays(trip.days);setActiveDayId(trip.days[0].id);setLegs([]);setTripCreator(null);setTab("plan")}
-  function renameTrip(id:string){const trip=trips.find((item)=>item.id===id);if(trip){setEditorError("");setEditor({kind:"trip",title:"여행 이름 변경",value:trip.title,tripId:id})}}
-  function removeTrip(id:string){if(trips.length<=1)return;const trip=trips.find((item)=>item.id===id);if(!trip||!window.confirm(`‘${trip.title}’ 여행을 삭제할까요?`))return;const remaining=trips.filter((item)=>item.id!==id);setTrips(remaining);if(id===activeTripId){const next=remaining[0];setActiveTripId(next.id);setDays(next.days);setActiveDayId(next.days[0].id);setLegs([])}}
+  function setPlaces(update: Place[] | ((items: Place[]) => Place[])) {
+    setDays((items) =>
+      items.map((day) =>
+        day.id === activeDayId ? { ...day, places: typeof update === "function" ? update(day.places) : update } : day,
+      ),
+    );
+  }
+  function closeSavedSearch() {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setSavedSearchOpen(false);
+    setResults([]);
+    setSearchError("");
+    setQuery("");
+  }
 
-  async function search(event:FormEvent){event.preventDefault();const term=query.trim();if(term.length<2){setResults([]);setSearchError("장소 이름이나 주소를 두 글자 이상 입력해 주세요.");return}setSearching(true);setSearchError("");try{const params=new URLSearchParams({q:term});if(searchPreviousPlace){params.set("fromLng",String(searchPreviousPlace.longitude));params.set("fromLat",String(searchPreviousPlace.latitude))}if(searchNextPlace){params.set("toLng",String(searchNextPlace.longitude));params.set("toLat",String(searchNextPlace.latitude))}const candidateMain=candidateFor?places.find((place)=>place.id===candidateFor):null;if(candidateMain){params.set("mainLng",String(candidateMain.longitude));params.set("mainLat",String(candidateMain.latitude))}const response=await fetch(`${API_BASE}/api/places/search?${params}`);const data=await response.json() as {places?:Place[];error?:string;source?:"kakao"|"mixed"|"local"|"geocoding"};if(!response.ok)throw new Error(data.error);setResults(data.places??[]);setSource(data.source??"");if(!(data.places??[]).length)setSearchError("검색 결과가 없습니다.");}catch(error){setSearchError(error instanceof Error?error.message:"검색에 실패했습니다.");}finally{setSearching(false)}}
-  function saveForActiveTrip(place:Place){const categorized=addPlaceCategory(place,activeTrip.title);setSavedCategories((items)=>items.includes(activeTrip.title)?items:[...items,activeTrip.title]);setSavedPlaces((items)=>{const existing=items.find((item)=>item.id===place.id);return existing?items.map((item)=>item.id===place.id?addPlaceCategory(item,activeTrip.title):item):[categorized,...items]});return categorized}
-  function addPlace(place:Place){if(places.length>=30){setSearchError("하루 경유지는 최대 30곳까지 추가할 수 있어요.");return}if(places.some((item)=>item.id===place.id))return;const categorized=saveForActiveTrip(place);setPlaces((items)=>{const next=[...items];next.splice(insertIndex??items.length,0,categorized);return next});setResults([]);setQuery("");if(insertIndex!==null){setInsertIndex(null);setTab("plan")}}
-  function defaultRouteSavedCategory(){setRouteSavedCategory(savedCategories.includes(activeTrip.title)?activeTrip.title:"전체")}
-  function chooseInsertion(index:number){defaultRouteSavedCategory();setInsertIndex(index);setCandidateFor(null);setEndpointTarget(null);setResults([]);setSearchError("");setQuery("");setTab("map")}
-  function chooseCandidate(id:string){defaultRouteSavedCategory();setCandidateFor(id);setInsertIndex(null);setEndpointTarget(null);setResults([]);setSearchError("");setQuery("");setTab("map")}
-  function chooseEndpoint(target:"start"|"goal"){defaultRouteSavedCategory();setEndpointTarget(target);setCandidateFor(null);setInsertIndex(null);setResults([]);setSearchError("");setQuery("");setTab("map")}
-  function setEndpoint(place:Place){if(!endpointTarget)return;saveForActiveTrip(place);const target=endpointTarget;const endpoint:RouteEndpoint={name:place.name,longitude:place.longitude,latitude:place.latitude};setDays((items)=>{const activeIndex=items.findIndex((day)=>day.id===activeDayId);return items.map((day,index)=>index===activeIndex?{...day,[target]:endpoint}:target==="goal"&&index===activeIndex+1?{...day,start:endpoint}:day)});setEndpointTarget(null);setResults([]);setQuery("");setLegs([]);setTab("plan")}
-  function addCandidate(place:Place){if(!candidateFor)return;const main=activeDay.places.find((item)=>item.id===candidateFor);const existing=activeDay.candidates?.[candidateFor]??[];if(!main||main.id===place.id||existing.some((item)=>item.id===place.id))return;const categorized=saveForActiveTrip(place);setDays((items)=>items.map((day)=>day.id===activeDayId?{...day,candidates:{...(day.candidates??{}),[candidateFor]:[...(day.candidates?.[candidateFor]??[]),categorized]}}:day));setCandidateFor(null);setResults([]);setQuery("");setTab("plan")}
-  function removeCandidate(mainId:string,id:string){setDays((items)=>items.map((day)=>day.id===activeDayId?{...day,candidates:{...(day.candidates??{}),[mainId]:(day.candidates?.[mainId]??[]).filter((item)=>item.id!==id)}}:day))}
-  function promoteCandidate(mainId:string,id:string){const promotedPlace=activeDay.candidates?.[mainId]?.find((item)=>item.id===id);if(promotedPlace)saveForActiveTrip(promotedPlace);setDays((items)=>items.map((day)=>{if(day.id!==activeDayId)return day;const index=day.places.findIndex((item)=>item.id===mainId);const alternatives=day.candidates?.[mainId]??[];const promoted=alternatives.find((item)=>item.id===id);if(index<0||!promoted)return day;const nextPlaces=[...day.places];const oldMain=nextPlaces[index];nextPlaces[index]=addPlaceCategory(promoted,activeTrip.title);const candidates={...(day.candidates??{})};delete candidates[mainId];candidates[promoted.id]=[oldMain,...alternatives.filter((item)=>item.id!==id)];return {...day,places:nextPlaces,candidates}}));setLegs([])}
-  function toggleSaved(place:Place){const exists=savedPlaces.some((item)=>item.id===place.id);if(savedSearchOpen){if(exists)return;setSavedPlaces((items)=>[{...place,savedCategories:placeCategories(place),savedCategory:undefined},...items]);return}setSavedPlaces((items)=>exists?items.filter((item)=>item.id!==place.id):[{...place,savedCategories:placeCategories(place),savedCategory:undefined},...items])}
-  function removeSavedPlace(place:Place){if(!window.confirm(`‘${place.name}’을(를) 내 장소에서 삭제할까요?\n기존 여행 일정에 추가된 장소는 그대로 유지됩니다.`))return;setSavedPlaces((items)=>items.filter((item)=>item.id!==place.id));setCategoryPlace((current)=>current?.id===place.id?null:current)}
-  function openSaveCategoryPicker(place:Place){const recommended=inferSavedCategory(place);setPendingSavePlace(place);setPendingSaveCategories([savedCategories.includes(recommended)?recommended:"기타"])}
-  function closeSaveCategoryPicker(){setPendingSavePlace(null);setPendingSaveCategories([])}
-  function togglePendingSaveCategory(category:SavedCategory){setPendingSaveCategories((items)=>items.includes(category)?items.filter((item)=>item!==category):[...items,category])}
-  function savePlaceInCategories(place:Place){if(!pendingSaveCategories.length)return;if(!savedPlaces.some((item)=>item.id===place.id))setSavedPlaces((items)=>[{...place,savedCategories:[...new Set(pendingSaveCategories)],savedCategory:undefined},...items]);closeSavedSearch();closeSaveCategoryPicker()}
-  function editSavedCategory(place:Place){setCategoryPlace(place)}
-  function updatePlaceCategories(place:Place,categories:SavedCategory[]){const normalized=[...new Set(categories.length?categories:["기타"])];const updated={...place,savedCategories:normalized,savedCategory:undefined};setSavedPlaces((items)=>items.map((item)=>item.id===place.id?updated:item));setCategoryPlace((current)=>current?.id===place.id?updated:current)}
-  function removePlaceCategory(place:Place,category:SavedCategory){updatePlaceCategories(place,placeCategories(place).filter((item)=>item!==category))}
-  function addSavedCategory(){setEditorError("");setEditor({kind:"category-add",title:"새 카테고리 추가",value:""})}
-  function renameSavedCategory(category:string){setEditorError("");setEditor({kind:"category-rename",title:"카테고리 이름 수정",value:category,category})}
-  function deleteSavedCategory(category:string){if(category==="기타"){window.alert("‘기타’ 카테고리는 삭제할 수 없어요.");return}if(!window.confirm(`‘${category}’ 카테고리를 삭제할까요?\n이 카테고리만 가진 장소는 ‘기타’로 이동합니다.`))return;setSavedCategories((items)=>items.filter((item)=>item!==category));setSavedPlaces((items)=>items.map((place)=>{const remaining=placeCategories(place).filter((item)=>item!==category);return {...place,savedCategories:remaining.length?remaining:["기타"],savedCategory:undefined}}));setSavedCategory("전체")}
-  function manageSavedCategories(){setCategoryManagerOpen(true)}
-  function editMemo(place:Place){setEditorError("");setEditor({kind:"memo",title:`${place.name} 메모`,value:place.memo??"",place})}
-  function submitEditor(){if(!editor)return;const value=editor.value.trim();if(editor.kind!=="memo"&&!value){setEditorError("내용을 입력해 주세요.");return}if((editor.kind==="category-add"||editor.kind==="category-rename")&&(value.length>40||savedCategories.some((item)=>item===value&&item!==editor.category))){setEditorError("40자 이내의 중복되지 않은 이름을 입력해 주세요.");return}if(editor.kind==="trip"&&editor.tripId){const oldTitle=trips.find((item)=>item.id===editor.tripId)?.title;setTrips((items)=>items.map((item)=>item.id===editor.tripId?{...item,title:value,updatedAt:Date.now()}:item));if(oldTitle&&oldTitle!==value){setSavedCategories((items)=>[...new Set(items.map((item)=>item===oldTitle?value:item))]);setSavedPlaces((items)=>items.map((place)=>({...place,savedCategories:[...new Set(placeCategories(place).map((item)=>item===oldTitle?value:item))],savedCategory:undefined})))}}if(editor.kind==="memo"&&editor.place){const update=(item:Place)=>item.id===editor.place!.id?{...item,memo:value}:item;setDays((items)=>items.map((day)=>({...day,places:day.places.map(update),candidates:day.candidates?Object.fromEntries(Object.entries(day.candidates).map(([id,list])=>[id,list.map(update)])):day.candidates})));setSavedPlaces((items)=>items.map(update))}if(editor.kind==="category-add"){setSavedCategories((items)=>[...items,value]);setSavedCategory(value)}if(editor.kind==="category-rename"&&editor.category&&value!==editor.category){setSavedCategories((items)=>items.map((item)=>item===editor.category?value:item));setSavedPlaces((items)=>items.map((place)=>({...place,savedCategories:[...new Set(placeCategories(place).map((item)=>item===editor.category?value:item))],savedCategory:undefined})));setSavedCategory((current)=>current===editor.category?value:current)}setEditor(null);setEditorError("")}
-  function removePlace(id:string){setCandidatePreviews((items)=>{const next={...items};delete next[id];return next});setDays((items)=>items.map((day)=>{if(day.id!==activeDayId)return day;const index=day.places.findIndex((item)=>item.id===id);if(index<0)return day;const candidates={...(day.candidates??{})};const alternatives=candidates[id]??[];if(alternatives.length){const [promoted,...remaining]=alternatives;const nextPlaces=[...day.places];nextPlaces[index]=promoted;delete candidates[id];if(remaining.length)candidates[promoted.id]=remaining;return {...day,places:nextPlaces,candidates}}delete candidates[id];return {...day,places:day.places.filter((item)=>item.id!==id),candidates}}));setLegs([])}
-  function movePlace(from:number,to:number){if(to<0||to>=places.length||from===to)return;setPlaces((items)=>{const next=[...items];const [moved]=next.splice(from,1);next.splice(to,0,moved);return next})}
-  function beginDrag(index:number,event:ReactPointerEvent<HTMLButtonElement>){draggedIndex.current=index;setDragIndex(index);event.currentTarget.setPointerCapture(event.pointerId)}
-  function continueDrag(event:ReactPointerEvent<HTMLButtonElement>){if(draggedIndex.current===null)return;const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>("[data-order-index]");if(!target)return;const to=Number(target.dataset.orderIndex);const from=draggedIndex.current;if(!Number.isInteger(to)||from===to)return;movePlace(from,to);draggedIndex.current=to;setDragIndex(to)}
-  function endDrag(){draggedIndex.current=null;setDragIndex(null)}
+  function changeTab(nextTab: AppTab) {
+    if (nextTab !== "saved" && savedSearchOpen) closeSavedSearch();
+    setTab(nextTab);
+  }
+  function selectDay(id: string) {
+    setActiveDayId(id);
+    setLegs([]);
+    setCandidatePreviews({});
+    setInsertIndex(null);
+    setCandidateFor(null);
+    setEndpointTarget(null);
+    setResults([]);
+    setSearchError("");
+  }
+  function previewCandidate(mainId: string, place?: Place) {
+    setCandidatePreviews((items) => {
+      if (!place) {
+        const next = { ...items };
+        delete next[mainId];
+        return next;
+      }
+      return { ...items, [mainId]: place.id };
+    });
+    setLegs([]);
+  }
+  function saveDayDate() {
+    if (!dateEditor) return;
+    const targetIndex = days.findIndex((day) => day.id === dateEditor.dayId);
+    if (targetIndex < 0) return;
+    const start = new Date(`${dateEditor.value}T00:00:00`);
+    setDays((items) =>
+      items.map((day, index) => {
+        if (index < targetIndex) return day;
+        const next = new Date(start);
+        next.setDate(start.getDate() + index - targetIndex);
+        return {
+          ...day,
+          date: `${next.getMonth() + 1}월 ${next.getDate()}일`,
+          dateValue: isoDate(next.getFullYear(), next.getMonth(), next.getDate()),
+        };
+      }),
+    );
+    setDateEditor(null);
+  }
+  function addDay() {
+    const previous = days[days.length - 1];
+    if (previous.goal.name === "목적지 미정") {
+      window.alert(`${previous.label} 목적지를 먼저 설정해 주세요.`);
+      setActiveDayId(previous.id);
+      return;
+    }
+    const id = `day-${Date.now()}`;
+    const next: DayPlan = {
+      id,
+      label: `${days.length + 1}일차`,
+      date: nextDateLabel(previous.date),
+      dateValue: nextIsoDate(previous.dateValue),
+      start: previous.goal,
+      goal: { name: "목적지 미정", longitude: previous.goal.longitude, latitude: previous.goal.latitude },
+      places: [],
+    };
+    setDays((items) => [...items, next]);
+    setActiveDayId(id);
+    setLegs([]);
+  }
+  function removeDay(id: string) {
+    if (days.length <= 1) return;
+    const target = days.find((day) => day.id === id);
+    if (!target || !window.confirm(`${target.label}(${target.date}) 일정과 장소를 모두 삭제할까요?`)) return;
+    const index = days.findIndex((day) => day.id === id);
+    const remaining = days.filter((day) => day.id !== id).map((day, i) => ({ ...day, label: `${i + 1}일차` }));
+    setDays(remaining);
+    if (id === activeDayId) setActiveDayId(remaining[Math.max(0, index - 1)]?.id ?? remaining[0].id);
+    setLegs([]);
+  }
+  function openTrip(id: string) {
+    const trip = trips.find((item) => item.id === id);
+    if (!trip) return;
+    setActiveTripId(id);
+    setActiveDayId(trip.days[0].id);
+    setLegs([]);
+    setTab("plan");
+  }
+  function addTrip() {
+    setTripCreator({ title: "", startDate: "", endDate: "", error: "" });
+  }
+  function createTrip() {
+    if (!tripCreator) return;
+    const title = tripCreator.title.trim();
+    if (!title) {
+      setTripCreator({ ...tripCreator, error: "여행 이름을 입력해 주세요." });
+      return;
+    }
+    const firstDate = tripCreator.startDate || tripCreator.endDate;
+    let dayCount = 1;
+    if (tripCreator.startDate && tripCreator.endDate) {
+      const start = new Date(`${tripCreator.startDate}T00:00:00`);
+      const end = new Date(`${tripCreator.endDate}T00:00:00`);
+      dayCount = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+      if (dayCount < 1) {
+        setTripCreator({ ...tripCreator, error: "종료일은 시작일보다 빠를 수 없어요." });
+        return;
+      }
+    }
+    const timestamp = Date.now();
+    const tripDays: DayPlan[] = Array.from({ length: dayCount }, (_, index) => {
+      let date = "날짜 미정";
+      let dateValue: undefined | string;
+      if (firstDate) {
+        const value = new Date(`${firstDate}T00:00:00`);
+        value.setDate(value.getDate() + index);
+        date = `${value.getMonth() + 1}월 ${value.getDate()}일`;
+        dateValue = isoDate(value.getFullYear(), value.getMonth(), value.getDate());
+      }
+      return {
+        id: `day-${timestamp}-${index + 1}`,
+        label: `${index + 1}일차`,
+        date,
+        dateValue,
+        start: { name: "출발지 미정", longitude: 127.5, latitude: 36.5 },
+        goal: { name: "목적지 미정", longitude: 127.5, latitude: 36.5 },
+        places: [],
+      };
+    });
+    const trip: TripPlan = { id: `trip-${timestamp}`, title, days: tripDays, updatedAt: timestamp };
+    setSavedCategories((items) => (items.includes(title) ? items : [...items, title]));
+    setTrips((items) => [trip, ...items]);
+    setActiveTripId(trip.id);
+    setActiveDayId(trip.days[0].id);
+    setLegs([]);
+    setTripCreator(null);
+    setTab("plan");
+  }
+  function renameTrip(id: string) {
+    const trip = trips.find((item) => item.id === id);
+    if (trip) {
+      setEditorError("");
+      setEditor({ kind: "trip", title: "여행 이름 변경", value: trip.title, tripId: id });
+    }
+  }
+  function removeTrip(id: string) {
+    if (trips.length <= 1) return;
+    const trip = trips.find((item) => item.id === id);
+    if (!trip || !window.confirm(`‘${trip.title}’ 여행을 삭제할까요?`)) return;
+    const remaining = trips.filter((item) => item.id !== id);
+    setTrips(remaining);
+    if (id === activeTripId) {
+      const next = remaining[0];
+      setActiveTripId(next.id);
+      setActiveDayId(next.days[0].id);
+      setLegs([]);
+    }
+  }
 
-  return <main className="app-shell">
-    <header className="app-header"><div><p className="overline">자동차와 도보를 잇는 여행</p><h1>길담</h1></div>{tab==="saved"?<button className="category-manage-button" onClick={manageSavedCategories}>카테고리 관리</button>:<button className="profile" aria-label="프로필">CU</button>}</header>
-    {tab==="plan"&&<section className={`page plan-page ${daySwipeAnimating?"swipe-settling":daySwipeOffset?"swipe-dragging":""}`} style={daySwipeAnimating||daySwipeOffset?{transform:`translate3d(${daySwipeOffset}px,0,0)`}:undefined} onTouchStart={beginDaySwipe} onTouchMove={moveDaySwipe} onTouchEnd={endDaySwipe} onTouchCancel={cancelDaySwipe}>
-      {previousDay&&<DaySwipePreview day={previousDay} direction="previous" tripTitle={activeTrip.title} tripRange={`${days[0]?.date}–${days[days.length-1]?.date} · ${days.length}일 여행`}/>}
-      {nextDay&&<DaySwipePreview day={nextDay} direction="next" tripTitle={activeTrip.title} tripRange={`${days[0]?.date}–${days[days.length-1]?.date} · ${days.length}일 여행`}/>}
-      <div className="trip-hero"><div className="hero-top"><span>{days[0]?.date}–{days[days.length-1]?.date} · {days.length}일 여행</span><span className="weather">맑음 27°</span></div><h2>{activeTrip.title}</h2><div className="hero-stats"><span>{activeDay.label}</span><span>경유지 {places.length}곳</span><span>자동 저장</span></div></div>
-      <div className="day-switcher" role="tablist" aria-label="여행 날짜">{days.map((day)=><div className={`day-tab ${day.id===activeDayId?"active":""}`} key={day.id}><button role="tab" aria-selected={day.id===activeDayId} className="day-select" onClick={()=>selectDay(day.id)}><strong>{day.label}</strong><span>{day.date}</span></button><button className="day-date-edit" onClick={()=>setDateEditor({dayId:day.id,value:dateInputValue(day.date)})} aria-label={`${day.label} 날짜 수정`}>▣</button><button className="day-remove" onClick={()=>removeDay(day.id)} disabled={days.length<=1} aria-label={`${day.label} 삭제`}>×</button></div>)}<button className="add-day" onClick={addDay} aria-label="여행 날짜 추가">＋</button></div>
-      <div className="map-pin-row"><button type="button" className={mapPinned?"active":""} aria-pressed={mapPinned} onClick={()=>setMapPinned((value)=>!value)}><i aria-hidden="true">⌖</i>{mapPinned?"지도 고정 해제":"스크롤할 때 지도 고정"}</button></div>
-      <div className={`plan-map ${mapPinned?"pinned":""}`}><NaverMap places={mapPlaces} start={activeDay.start} goal={activeDay.goal} onRouteData={setLegs} cacheScope={routeCacheScope}/></div>
-      <SectionTitle title={`${activeDay.label} 일정`} subtitle="각 구간의 실시간 자동차 거리와 예상 시간이에요"/>
-      <div className={`timeline sortable ${dragIndex!==null?"is-sorting":""}`}>
-        <article className="timeline-item fixed-stop"><time>출발</time><div className="stop-dot">S</div><div className="stop-content"><div className="stop-title-row"><h3>{activeDay.start.name}</h3></div><p>{activeDay.label} 출발지예요</p><div className="stop-actions"><button className="add-place" onClick={()=>chooseEndpoint("start")}>출발지 변경</button>{activeDay.start.name!=="출발지 미정"&&<NavigationLinks place={activeDay.start}/>}</div></div></article>
-        <TimelineInsertion index={0} disabled={places.length>=30} onAdd={chooseInsertion}/>
-        {places.map((place,index)=><Fragment key={place.id}><ScheduleStop place={place} index={index} leg={legs[index]} alternatives={activeDay.candidates?.[place.id]??[]} dragging={dragIndex===index} onBeginDrag={beginDrag} onContinueDrag={continueDrag} onEndDrag={endDrag} onRemove={removePlace} onEditMemo={editMemo} onAddCandidate={chooseCandidate} onRemoveCandidate={removeCandidate} onPromoteCandidate={promoteCandidate} onPreviewCandidate={previewCandidate}/><TimelineInsertion index={index+1} disabled={places.length>=30} onAdd={chooseInsertion}/></Fragment>)}
-        <article className="timeline-item fixed-stop"><time>도착</time><div className="stop-dot">G</div><div className="stop-content"><div className="stop-title-row"><h3>{activeDay.goal.name}</h3></div><p>{activeDay.goal.name==="목적지 미정"?"검색해서 목적지를 정해 주세요.":`${activeDay.label} 최종 목적지예요`}</p>{activeDay.goal.name!=="목적지 미정"&&<LegSummary leg={legs[places.length]}/>}<div className="stop-actions"><button className="add-place" onClick={()=>chooseEndpoint("goal")}>목적지 변경</button>{activeDay.goal.name!=="목적지 미정"&&<NavigationLinks place={activeDay.goal}/>}</div></div></article>
-      </div>
-    </section>}
-    {tab==="map"&&<section className="page map-page"><div className="map-wrap"><NaverMap places={places} start={activeDay.start} goal={activeDay.goal}/><form className="place-search" onSubmit={search}><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder={choosingPlace?"추가할 장소를 검색하세요":"주소, 관광지, 식당을 검색하세요"} aria-label="장소 검색"/><button disabled={searching}>{searching?"검색 중":"검색"}</button></form>{endpointTarget&&<div className="insertion-banner"><strong>{endpointTarget==="start"?"출발지":"목적지"}로 사용할 장소를 선택하세요</strong><button onClick={()=>{setEndpointTarget(null);setTab("plan")}}>취소</button></div>}{candidateFor!==null&&<div className="insertion-banner"><strong>{places.find((item)=>item.id===candidateFor)?.name} 대신 갈 후보를 선택하세요</strong><button onClick={()=>{setCandidateFor(null);setTab("plan")}}>취소</button></div>}{insertIndex!==null&&<div className="insertion-banner"><strong>장소 추가 · {insertionFrom} → {insertionTo}</strong><button onClick={()=>{setInsertIndex(null);setTab("plan")}}>취소</button></div>}{choosingPlace&&<button type="button" className="saved-place-guide" onClick={()=>savedPlacesRef.current?.scrollIntoView({behavior:"smooth",block:"start"})}><span aria-hidden="true">♡</span><strong>{savedPlaces.length?"검색하거나, 아래 저장한 장소에서 선택할 수 있어요":"검색 결과의 ♡를 눌러 장소를 저장할 수도 있어요"}</strong><span aria-hidden="true">↓</span></button>}{(results.length>0||searchError)&&<div className={`search-results ${choosingPlace?"with-insertion":""}`}>{source==="geocoding"&&<p className="search-notice">장소 검색 결과가 없어 주소 검색 결과를 표시했어요.</p>}{searchError&&<p className="search-error">{searchError}</p>}{results.map((place)=><article key={place.id}><div><strong>{place.name}</strong><p>{place.category} · {place.address}</p>{searchPreviousPlace&&<p className="search-result-distance">이전 장소에서 약 {distanceLabel(pointDistance(searchPreviousPlace,place))} · 직선거리</p>}</div><div className="search-result-actions"><button className="save-place" onClick={()=>toggleSaved(place)}>{savedPlaces.some((item)=>item.id===place.id)?"♥ 저장됨":"♡ 저장"}</button><button onClick={()=>endpointTarget?setEndpoint(place):candidateFor?addCandidate(place):addPlace(place)} disabled={!endpointTarget&&!candidateFor&&places.some((item)=>item.id===place.id)}>{endpointTarget?`${endpointTarget==="start"?"출발지":"목적지"}로 설정`:candidateFor?"후보 등록":places.some((item)=>item.id===place.id)?"추가됨":insertIndex!==null?"이 구간에 추가":"경로 추가"}</button></div></article>)}</div>}</div><div ref={savedPlacesRef} className="rest-panel"><div className="panel-handle"/><SectionTitle compact title={`저장한 장소 ${routeSavedPlaces.length}곳`} subtitle={routeSavedCategory==="전체"?"카테고리를 고르거나 저장한 장소를 바로 선택하세요":`‘${routeSavedCategory}’ 카테고리에서 선택하고 있어요`} action="전체 보기" onClick={()=>setTab("saved")}/>{savedPlaces.length&&<div className="saved-category-tabs route-saved-category-tabs" role="tablist" aria-label="추가할 저장 장소 카테고리">{(["전체",...SAVED_CATEGORIES] as const).map((category)=>{const count=category==="전체"?savedPlaces.length:savedPlaces.filter((place)=>placeCategories(place).includes(category)).length;return <button key={category} role="tab" aria-selected={routeSavedCategory===category} className={routeSavedCategory===category?"active":""} onClick={()=>setRouteSavedCategory(category)}>{category} <span>{count}</span></button>})}</div>}{routeSavedPlaces.length?routeSavedPlaces.map((place)=><article className="rest-card" key={place.id}><div className="rest-symbol">♡</div><div className="rest-copy"><h3>{place.name}</h3><p>{place.address}</p><span>{place.category}</span></div><button onClick={()=>endpointTarget?setEndpoint(place):candidateFor?addCandidate(place):addPlace(place)} disabled={!endpointTarget&&!candidateFor&&places.some((item)=>item.id===place.id)}>{endpointTarget?`${endpointTarget==="start"?"출발지":"목적지"}로 설정`:candidateFor?"후보 등록":places.some((item)=>item.id===place.id)?"추가됨":insertIndex!==null?"이 구간에 추가":"경로 추가"}</button></article>):<div className="saved-empty"><strong>{savedPlaces.length?`‘${routeSavedCategory}’ 카테고리에 저장한 장소가 없어요`:"저장한 장소가 없어요"}</strong><p>{savedPlaces.length?"다른 카테고리를 선택해 보세요.":"위 검색 결과에서 ♡ 저장을 눌러보세요."}</p></div>}</div></section>}
-    {tab==="trips"&&<section className="page trips-page"><SectionTitle title="내 여행" subtitle="날짜별 일정과 후보 장소를 여행 단위로 관리해요" action="＋ 새 여행" onClick={addTrip}/><div className="trip-list">{displayedTrips.map((trip)=><article className={`trip-card ${trip.id===activeTripId?"active":""}`} key={trip.id} role="button" tabIndex={0} aria-label={`${trip.title} 일정 열기`} onClick={()=>openTrip(trip.id)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openTrip(trip.id)}}}><button className="trip-delete" onClick={(event)=>{event.stopPropagation();removeTrip(trip.id)}} disabled={trips.length<=1} aria-label={`${trip.title} 삭제`}>×</button><span className="trip-status">{tripStatusLabel(trip,activeTripId)}</span><div className="trip-title-row"><h3>{trip.title}</h3><button className="trip-rename" onClick={(event)=>{event.stopPropagation();renameTrip(trip.id)}} aria-label={`${trip.title} 이름 변경`} title="이름 변경"><span aria-hidden="true">✏︎</span></button></div><p>{trip.days[0]?.date} – {trip.days[trip.days.length-1]?.date}</p><div className="trip-meta"><span>{trip.days.length}일</span><span>장소 {trip.days.reduce((count,day)=>count+day.places.length,0)}곳</span></div></article>)}</div></section>}
-    {tab==="saved"&&<section className="page saved-page"><SectionTitle title="내 장소" subtitle={`카테고리별로 모아보기 · ${savedPlaces.length}곳`} action="＋ 장소 추가" onClick={()=>{setSavedSearchOpen(true);setResults([]);setSearchError("");setQuery("")}}/><div className="saved-category-tabs" role="tablist" aria-label="저장 장소 카테고리">{(["전체",...SAVED_CATEGORIES] as const).map((category)=>{const count=category==="전체"?savedPlaces.length:savedPlaces.filter((place)=>placeCategories(place).includes(category)).length;return <button key={category} role="tab" aria-selected={savedCategory===category} className={savedCategory===category?"active":""} onClick={()=>setSavedCategory(category)}>{category} <span>{count}</span></button>})}<button className="add-category-tab" onClick={addSavedCategory} aria-label="새 카테고리 추가">＋</button></div><div className="saved-list">{filteredSavedPlaces.length?filteredSavedPlaces.map((place)=><article className="rest-card saved-place-card" key={place.id}><button className="remove-saved-place" onClick={()=>removeSavedPlace(place)} aria-label={`${place.name} 내 장소에서 삭제`} title="내 장소에서 삭제">×</button><div className="rest-symbol">♥</div><div className="rest-copy"><div className="saved-place-title"><h3>{place.name}</h3></div><p>{place.address}</p><span>{place.category}</span><div className="place-category-chips" aria-label={`${place.name} 카테고리`}>{placeCategories(place).map((category)=><span key={category}>{category}<button onClick={()=>removePlaceCategory(place,category)} aria-label={`${place.name}에서 ${category} 카테고리 삭제`}>×</button></span>)}<button className="place-category-add" onClick={()=>editSavedCategory(place)}>＋ 카테고리</button><button className={`place-memo-icon ${place.memo?"has-memo":""}`} onClick={()=>editMemo(place)} aria-label={`${place.name} ${place.memo?"메모 수정":"메모 추가"}`} title={place.memo?"메모 수정":"메모 추가"}><span aria-hidden="true"/></button></div>{place.memo&&<p className="place-memo">메모 · {place.memo}</p>}</div></article>):<div className="saved-empty"><strong>{savedPlaces.length?`${savedCategory} 카테고리에 저장한 장소가 없어요`:"아직 저장한 장소가 없어요"}</strong><p>{savedPlaces.length?"다른 카테고리를 선택하거나 장소의 분류를 변경해 보세요.":"지도에서 장소를 검색한 뒤 ♡ 저장을 눌러보세요."}</p></div>}</div></section>}
-    {savedSearchOpen&&tab==="saved"&&<><div className="saved-search-dismiss-layer" role="presentation" onPointerDown={closeSavedSearch}/><section className="saved-inline-search" aria-label="내 장소 검색"><form onSubmit={search}><input autoFocus value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="저장할 장소 이름이나 주소를 검색하세요" aria-label="저장할 장소 검색"/><button type="submit" disabled={searching}>{searching?"검색 중":"검색"}</button></form><p className="saved-search-help">검색 결과에서 원하는 장소를 내 장소에 바로 저장할 수 있어요.</p>{searchError&&<div className="saved-search-empty">{searchError}</div>}<div className="saved-search-results">{results.map((place)=><article key={place.id}><div><strong>{place.name}</strong><p>{place.category} · {place.address}</p></div><button onClick={()=>openSaveCategoryPicker(place)} disabled={savedPlaces.some((item)=>item.id===place.id)}>{savedPlaces.some((item)=>item.id===place.id)?"저장됨":"＋ 내 장소에 저장"}</button></article>)}</div></section></>}
-    {pendingSavePlace&&<div className="dialog-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)closeSaveCategoryPicker()}}><section className="app-dialog save-category-dialog" role="dialog" aria-modal="true" aria-labelledby="save-category-title"><div className="dialog-title"><div><span>{pendingSavePlace.name}</span><h2 id="save-category-title">카테고리를 선택하세요</h2></div><button onClick={closeSaveCategoryPicker} aria-label="닫기">×</button></div><p className="category-recommendation">여러 개 선택할 수 있어요 · 추천 <strong>{inferSavedCategory(pendingSavePlace)}</strong></p><div className="category-select-grid">{savedCategories.map((category)=>{const selected=pendingSaveCategories.includes(category);const recommended=inferSavedCategory(pendingSavePlace)===category;return <button key={category} className={`${selected?"active ":""}${recommended?"recommended":""}`} aria-pressed={selected} onClick={()=>togglePendingSaveCategory(category)}><i aria-hidden="true">{selected?"✓":""}</i><b>{category}</b>{recommended&&<span>추천</span>}</button>})}</div><button className="add-category-from-save" onClick={addSavedCategory}>＋ 새 카테고리 만들기</button><button className="dialog-primary" onClick={()=>savePlaceInCategories(pendingSavePlace)} disabled={!pendingSaveCategories.length}>{pendingSaveCategories.length?`${pendingSaveCategories.length}개 카테고리에 저장`:"카테고리를 선택하세요"}</button></section></div>}
-    {categoryManagerOpen&&<div className="dialog-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setCategoryManagerOpen(false)}}><section className="app-dialog category-manager" role="dialog" aria-modal="true" aria-labelledby="category-manager-title"><div className="dialog-title"><div><span>내 장소</span><h2 id="category-manager-title">카테고리 관리</h2></div><button onClick={()=>setCategoryManagerOpen(false)} aria-label="닫기">×</button></div><div className="category-manager-list">{savedCategories.map((category)=><div key={category}><strong>{category}</strong><span>{savedPlaces.filter((place)=>placeCategories(place).includes(category)).length}곳</span><button onClick={()=>renameSavedCategory(category)}>이름 수정</button><button className="danger" onClick={()=>deleteSavedCategory(category)} disabled={category==="기타"}>삭제</button></div>)}</div><button className="dialog-primary" onClick={addSavedCategory}>＋ 새 카테고리</button></section></div>}
-    {categoryPlace&&<div className="dialog-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setCategoryPlace(null)}}><section className="app-dialog place-category-dialog" role="dialog" aria-modal="true" aria-labelledby="category-select-title"><div className="dialog-title"><div><span>{categoryPlace.name}</span><h2 id="category-select-title">카테고리 선택</h2></div><button onClick={()=>setCategoryPlace(null)} aria-label="닫기">×</button></div><p className="category-recommendation">선택하면 바로 추가되고, 다시 누르면 삭제돼요.</p><div className="category-choice-list">{savedCategories.map((category)=>{const selected=placeCategories(categoryPlace).includes(category);return <button key={category} className={selected?"active":""} aria-pressed={selected} onClick={()=>{const current=placeCategories(categoryPlace);updatePlaceCategories(categoryPlace,selected?current.filter((item)=>item!==category):[...current,category])}}><i aria-hidden="true">{selected?"✓":""}</i><strong>{category}</strong><span>{selected?"선택됨":"선택"}</span></button>})}</div><button className="add-category-from-place" onClick={addSavedCategory}>＋ 새 카테고리 만들기</button><button className="dialog-primary" onClick={()=>setCategoryPlace(null)}>완료</button></section></div>}
-    {tripCreator&&<div className="dialog-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setTripCreator(null)}}><section className="app-dialog trip-creator-dialog" role="dialog" aria-modal="true" aria-labelledby="trip-creator-title"><div className="dialog-title"><div><span>새로운 일정</span><h2 id="trip-creator-title">새 여행 만들기</h2></div><button onClick={()=>setTripCreator(null)} aria-label="닫기">×</button></div><label className="trip-field"><span>여행 이름 <strong>필수</strong></span><input autoFocus value={tripCreator.title} onChange={(event)=>setTripCreator({...tripCreator,title:event.target.value,error:""})} maxLength={40} placeholder="예: 강원도 가족 여행"/></label><DateRangePicker startDate={tripCreator.startDate} endDate={tripCreator.endDate} onChange={(startDate,endDate)=>setTripCreator({...tripCreator,startDate,endDate,error:""})}/>{tripCreator.error&&<p className="dialog-error">{tripCreator.error}</p>}<div className="dialog-actions"><button onClick={()=>setTripCreator(null)}>취소</button><button className="dialog-primary" onClick={createTrip}>여행 만들기</button></div></section></div>}
-    {dateEditor&&<div className="dialog-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setDateEditor(null)}}><section className="app-dialog date-dialog" role="dialog" aria-modal="true" aria-labelledby="date-editor-title"><div className="dialog-title"><div><span>{days.find((day)=>day.id===dateEditor.dayId)?.label}</span><h2 id="date-editor-title">여행 날짜 수정</h2></div><button onClick={()=>setDateEditor(null)} aria-label="닫기">×</button></div><input type="date" autoFocus value={dateEditor.value} onChange={(event)=>setDateEditor({...dateEditor,value:event.target.value})}/><p className="date-dialog-help">선택한 일차 이후의 날짜도 연속되도록 자동으로 변경됩니다.</p><div className="dialog-actions"><button onClick={()=>setDateEditor(null)}>취소</button><button className="dialog-primary" onClick={saveDayDate}>날짜 저장</button></div></section></div>}
-    {editor&&<div className="dialog-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setEditor(null)}}><section className="app-dialog" role="dialog" aria-modal="true" aria-labelledby="text-editor-title"><div className="dialog-title"><div><span>{editor.kind==="memo"?"방문 전에 기억할 정보":"길담"}</span><h2 id="text-editor-title">{editor.title}</h2></div><button onClick={()=>setEditor(null)} aria-label="닫기">×</button></div>{editor.kind==="memo"?<textarea autoFocus value={editor.value} onChange={(event)=>setEditor({...editor,value:event.target.value})} placeholder="추천 메뉴, 주차 정보, 운영 시간 등을 기록하세요" rows={5}/>:<input autoFocus value={editor.value} onChange={(event)=>setEditor({...editor,value:event.target.value})} maxLength={40} placeholder={editor.kind.startsWith("category")?"카테고리 이름":"여행 이름"}/>} {editorError&&<p className="dialog-error">{editorError}</p>}<div className="dialog-actions"><button onClick={()=>setEditor(null)}>취소</button><button className="dialog-primary" onClick={submitEditor}>저장</button></div></section></div>}
-    <nav className="bottom-nav" aria-label="주요 메뉴"><button className={tab==="plan"?"active":""} onClick={()=>setTab("plan")}><span>⌂</span>일정</button><button className={tab==="trips"?"active":""} onClick={()=>setTab("trips")}><span>▣</span>여행</button><button className={tab==="saved"?"active":""} onClick={()=>setTab("saved")}><span>♡</span>내 장소</button></nav>
-  </main>;
+  function saveForActiveTrip(place: Place) {
+    const categorized = addPlaceCategory(place, activeTrip.title);
+    setSavedCategories((items) => (items.includes(activeTrip.title) ? items : [...items, activeTrip.title]));
+    setSavedPlaces((items) => {
+      const existing = items.find((item) => item.id === place.id);
+      return existing
+        ? items.map((item) => (item.id === place.id ? addPlaceCategory(item, activeTrip.title) : item))
+        : [categorized, ...items];
+    });
+    return categorized;
+  }
+  function addPlace(place: Place) {
+    if (places.length >= 30) {
+      setSearchError("하루 경유지는 최대 30곳까지 추가할 수 있어요.");
+      return;
+    }
+    if (places.some((item) => item.id === place.id)) return;
+    const categorized = saveForActiveTrip(place);
+    setPlaces((items) => {
+      const next = [...items];
+      next.splice(insertIndex ?? items.length, 0, categorized);
+      return next;
+    });
+    setResults([]);
+    setQuery("");
+    if (insertIndex !== null) {
+      setInsertIndex(null);
+      setTab("plan");
+    }
+  }
+  function defaultRouteSavedCategory() {
+    setRouteSavedCategory(savedCategories.includes(activeTrip.title) ? activeTrip.title : "전체");
+  }
+  function chooseInsertion(index: number) {
+    defaultRouteSavedCategory();
+    setInsertIndex(index);
+    setCandidateFor(null);
+    setEndpointTarget(null);
+    setResults([]);
+    setSearchError("");
+    setQuery("");
+    setTab("map");
+  }
+  function chooseCandidate(id: string) {
+    defaultRouteSavedCategory();
+    setCandidateFor(id);
+    setInsertIndex(null);
+    setEndpointTarget(null);
+    setResults([]);
+    setSearchError("");
+    setQuery("");
+    setTab("map");
+  }
+  function chooseEndpoint(target: "start" | "goal") {
+    defaultRouteSavedCategory();
+    setEndpointTarget(target);
+    setCandidateFor(null);
+    setInsertIndex(null);
+    setResults([]);
+    setSearchError("");
+    setQuery("");
+    setTab("map");
+  }
+  function setEndpoint(place: Place) {
+    if (!endpointTarget) return;
+    saveForActiveTrip(place);
+    const target = endpointTarget;
+    const endpoint: RouteEndpoint = { name: place.name, longitude: place.longitude, latitude: place.latitude };
+    setDays((items) => {
+      const activeIndex = items.findIndex((day) => day.id === activeDayId);
+      return items.map((day, index) =>
+        index === activeIndex
+          ? { ...day, [target]: endpoint }
+          : target === "goal" && index === activeIndex + 1
+            ? { ...day, start: endpoint }
+            : day,
+      );
+    });
+    setEndpointTarget(null);
+    setResults([]);
+    setQuery("");
+    setLegs([]);
+    setTab("plan");
+  }
+  function addCandidate(place: Place) {
+    if (!candidateFor) return;
+    const main = activeDay.places.find((item) => item.id === candidateFor);
+    const existing = activeDay.candidates?.[candidateFor] ?? [];
+    if (!main || main.id === place.id || existing.some((item) => item.id === place.id)) return;
+    const categorized = saveForActiveTrip(place);
+    setDays((items) =>
+      items.map((day) =>
+        day.id === activeDayId
+          ? {
+              ...day,
+              candidates: {
+                ...(day.candidates ?? {}),
+                [candidateFor]: [...(day.candidates?.[candidateFor] ?? []), categorized],
+              },
+            }
+          : day,
+      ),
+    );
+    setCandidateFor(null);
+    setResults([]);
+    setQuery("");
+    setTab("plan");
+  }
+  function removeCandidate(mainId: string, id: string) {
+    setDays((items) =>
+      items.map((day) =>
+        day.id === activeDayId
+          ? {
+              ...day,
+              candidates: {
+                ...(day.candidates ?? {}),
+                [mainId]: (day.candidates?.[mainId] ?? []).filter((item) => item.id !== id),
+              },
+            }
+          : day,
+      ),
+    );
+  }
+  function promoteCandidate(mainId: string, id: string) {
+    const promotedPlace = activeDay.candidates?.[mainId]?.find((item) => item.id === id);
+    if (promotedPlace) saveForActiveTrip(promotedPlace);
+    setDays((items) =>
+      items.map((day) => {
+        if (day.id !== activeDayId) return day;
+        const index = day.places.findIndex((item) => item.id === mainId);
+        const alternatives = day.candidates?.[mainId] ?? [];
+        const promoted = alternatives.find((item) => item.id === id);
+        if (index < 0 || !promoted) return day;
+        const nextPlaces = [...day.places];
+        const oldMain = nextPlaces[index];
+        nextPlaces[index] = addPlaceCategory(promoted, activeTrip.title);
+        const candidates = { ...(day.candidates ?? {}) };
+        delete candidates[mainId];
+        candidates[promoted.id] = [oldMain, ...alternatives.filter((item) => item.id !== id)];
+        return { ...day, places: nextPlaces, candidates };
+      }),
+    );
+    setLegs([]);
+  }
+  function toggleSaved(place: Place) {
+    const exists = savedPlaces.some((item) => item.id === place.id);
+    if (savedSearchOpen) {
+      if (exists) return;
+      setSavedPlaces((items) => [
+        { ...place, savedCategories: placeCategories(place), savedCategory: undefined },
+        ...items,
+      ]);
+      return;
+    }
+    setSavedPlaces((items) =>
+      exists
+        ? items.filter((item) => item.id !== place.id)
+        : [{ ...place, savedCategories: placeCategories(place), savedCategory: undefined }, ...items],
+    );
+  }
+  function removeSavedPlace(place: Place) {
+    if (
+      !window.confirm(
+        `‘${place.name}’을(를) 내 장소에서 삭제할까요?\n기존 여행 일정에 추가된 장소는 그대로 유지됩니다.`,
+      )
+    )
+      return;
+    setSavedPlaces((items) => items.filter((item) => item.id !== place.id));
+    setCategoryPlace((current) => (current?.id === place.id ? null : current));
+  }
+  function openSaveCategoryPicker(place: Place) {
+    const recommended = inferSavedCategory(place);
+    setPendingSavePlace(place);
+    setPendingSaveCategories([savedCategories.includes(recommended) ? recommended : "기타"]);
+  }
+  function closeSaveCategoryPicker() {
+    setPendingSavePlace(null);
+    setPendingSaveCategories([]);
+  }
+  function togglePendingSaveCategory(category: SavedCategory) {
+    setPendingSaveCategories((items) =>
+      items.includes(category) ? items.filter((item) => item !== category) : [...items, category],
+    );
+  }
+  function savePlaceInCategories(place: Place) {
+    if (!pendingSaveCategories.length) return;
+    if (!savedPlaces.some((item) => item.id === place.id))
+      setSavedPlaces((items) => [
+        { ...place, savedCategories: [...new Set(pendingSaveCategories)], savedCategory: undefined },
+        ...items,
+      ]);
+    closeSavedSearch();
+    closeSaveCategoryPicker();
+  }
+  function editSavedCategory(place: Place) {
+    setCategoryPlace(place);
+  }
+  function updatePlaceCategories(place: Place, categories: SavedCategory[]) {
+    const normalized = [...new Set(categories.length ? categories : ["기타"])];
+    const updated = { ...place, savedCategories: normalized, savedCategory: undefined };
+    setSavedPlaces((items) => items.map((item) => (item.id === place.id ? updated : item)));
+    setCategoryPlace((current) => (current?.id === place.id ? updated : current));
+  }
+  function removePlaceCategory(place: Place, category: SavedCategory) {
+    updatePlaceCategories(
+      place,
+      placeCategories(place).filter((item) => item !== category),
+    );
+  }
+  function addSavedCategory() {
+    setEditorError("");
+    setEditor({ kind: "category-add", title: "새 카테고리 추가", value: "" });
+  }
+  function renameSavedCategory(category: string) {
+    setEditorError("");
+    setEditor({ kind: "category-rename", title: "카테고리 이름 수정", value: category, category });
+  }
+  function deleteSavedCategory(category: string) {
+    if (category === "기타") {
+      window.alert("‘기타’ 카테고리는 삭제할 수 없어요.");
+      return;
+    }
+    if (!window.confirm(`‘${category}’ 카테고리를 삭제할까요?\n이 카테고리만 가진 장소는 ‘기타’로 이동합니다.`)) return;
+    setSavedCategories((items) => items.filter((item) => item !== category));
+    setSavedPlaces((items) =>
+      items.map((place) => {
+        const remaining = placeCategories(place).filter((item) => item !== category);
+        return { ...place, savedCategories: remaining.length ? remaining : ["기타"], savedCategory: undefined };
+      }),
+    );
+    setSavedCategory("전체");
+  }
+  function manageSavedCategories() {
+    setCategoryManagerOpen(true);
+  }
+  function editMemo(place: Place) {
+    setEditorError("");
+    setEditor({ kind: "memo", title: `${place.name} 메모`, value: place.memo ?? "", place });
+  }
+  function submitEditor() {
+    if (!editor) return;
+    const value = editor.value.trim();
+    if (editor.kind !== "memo" && !value) {
+      setEditorError("내용을 입력해 주세요.");
+      return;
+    }
+    if (
+      (editor.kind === "category-add" || editor.kind === "category-rename") &&
+      (value.length > 40 || savedCategories.some((item) => item === value && item !== editor.category))
+    ) {
+      setEditorError("40자 이내의 중복되지 않은 이름을 입력해 주세요.");
+      return;
+    }
+    if (editor.kind === "trip" && editor.tripId) {
+      const oldTitle = trips.find((item) => item.id === editor.tripId)?.title;
+      setTrips((items) =>
+        items.map((item) => (item.id === editor.tripId ? { ...item, title: value, updatedAt: Date.now() } : item)),
+      );
+      if (oldTitle && oldTitle !== value) {
+        setSavedCategories((items) => [...new Set(items.map((item) => (item === oldTitle ? value : item)))]);
+        setSavedPlaces((items) =>
+          items.map((place) => ({
+            ...place,
+            savedCategories: [...new Set(placeCategories(place).map((item) => (item === oldTitle ? value : item)))],
+            savedCategory: undefined,
+          })),
+        );
+      }
+    }
+    if (editor.kind === "memo" && editor.place) {
+      const update = (item: Place) => (item.id === editor.place!.id ? { ...item, memo: value } : item);
+      setDays((items) =>
+        items.map((day) => ({
+          ...day,
+          places: day.places.map(update),
+          candidates: day.candidates
+            ? Object.fromEntries(Object.entries(day.candidates).map(([id, list]) => [id, list.map(update)]))
+            : day.candidates,
+        })),
+      );
+      setSavedPlaces((items) => items.map(update));
+    }
+    if (editor.kind === "category-add") {
+      setSavedCategories((items) => [...items, value]);
+      setSavedCategory(value);
+    }
+    if (editor.kind === "category-rename" && editor.category && value !== editor.category) {
+      setSavedCategories((items) => items.map((item) => (item === editor.category ? value : item)));
+      setSavedPlaces((items) =>
+        items.map((place) => ({
+          ...place,
+          savedCategories: [
+            ...new Set(placeCategories(place).map((item) => (item === editor.category ? value : item))),
+          ],
+          savedCategory: undefined,
+        })),
+      );
+      setSavedCategory((current) => (current === editor.category ? value : current));
+    }
+    setEditor(null);
+    setEditorError("");
+  }
+  function removePlace(id: string) {
+    setCandidatePreviews((items) => {
+      const next = { ...items };
+      delete next[id];
+      return next;
+    });
+    setDays((items) =>
+      items.map((day) => {
+        if (day.id !== activeDayId) return day;
+        const index = day.places.findIndex((item) => item.id === id);
+        if (index < 0) return day;
+        const candidates = { ...(day.candidates ?? {}) };
+        const alternatives = candidates[id] ?? [];
+        if (alternatives.length) {
+          const [promoted, ...remaining] = alternatives;
+          const nextPlaces = [...day.places];
+          nextPlaces[index] = promoted;
+          delete candidates[id];
+          if (remaining.length) candidates[promoted.id] = remaining;
+          return { ...day, places: nextPlaces, candidates };
+        }
+        delete candidates[id];
+        return { ...day, places: day.places.filter((item) => item.id !== id), candidates };
+      }),
+    );
+    setLegs([]);
+  }
+
+  return (
+    <main className="app-shell">
+      <AppHeader tab={tab} onManageCategories={manageSavedCategories} />
+      {tab === "plan" && (
+        <section
+          className={`page plan-page ${daySwipeAnimating ? "swipe-settling" : daySwipeOffset ? "swipe-dragging" : ""}`}
+          style={
+            daySwipeAnimating || daySwipeOffset ? { transform: `translate3d(${daySwipeOffset}px,0,0)` } : undefined
+          }
+          onTouchStart={beginDaySwipe}
+          onTouchMove={moveDaySwipe}
+          onTouchEnd={endDaySwipe}
+          onTouchCancel={cancelDaySwipe}
+        >
+          {previousDay && (
+            <DaySwipePreview
+              day={previousDay}
+              direction="previous"
+              tripTitle={activeTrip.title}
+              tripRange={`${days[0]?.date}–${days[days.length - 1]?.date} · ${days.length}일 여행`}
+            />
+          )}
+          {nextDay && (
+            <DaySwipePreview
+              day={nextDay}
+              direction="next"
+              tripTitle={activeTrip.title}
+              tripRange={`${days[0]?.date}–${days[days.length - 1]?.date} · ${days.length}일 여행`}
+            />
+          )}
+          <TripHeader trip={activeTrip} days={days} activeDay={activeDay} />
+          <DaySwitcher
+            days={days}
+            activeDayId={activeDayId}
+            onSelect={selectDay}
+            onAdd={addDay}
+            onEditDate={(day) => setDateEditor({ dayId: day.id, value: dateInputValue(day.date) })}
+            onRemove={removeDay}
+          />
+          <div className="map-pin-row">
+            <button
+              type="button"
+              className={mapPinned ? "active" : ""}
+              aria-pressed={mapPinned}
+              onClick={() => setMapPinned((value) => !value)}
+            >
+              <i aria-hidden="true">⌖</i>
+              {mapPinned ? "지도 고정 해제" : "스크롤할 때 지도 고정"}
+            </button>
+          </div>
+          <div className={`plan-map ${mapPinned ? "pinned" : ""}`}>
+            <NaverMap
+              places={mapPlaces}
+              start={activeDay.start}
+              goal={activeDay.goal}
+              onRouteData={setLegs}
+              cacheScope={routeCacheScope}
+            />
+          </div>
+          <SectionTitle title={`${activeDay.label} 일정`} subtitle="각 구간의 실시간 자동차 거리와 예상 시간이에요" />
+          <ScheduleTimeline
+            day={activeDay}
+            legs={legs}
+            dragIndex={dragIndex}
+            onChooseEndpoint={chooseEndpoint}
+            onChooseInsertion={chooseInsertion}
+            onBeginDrag={beginDrag}
+            onContinueDrag={continueDrag}
+            onEndDrag={endDrag}
+            onRemove={removePlace}
+            onEditMemo={editMemo}
+            onAddCandidate={chooseCandidate}
+            onRemoveCandidate={removeCandidate}
+            onPromoteCandidate={promoteCandidate}
+            onPreviewCandidate={previewCandidate}
+          />
+        </section>
+      )}
+      {tab === "map" && (
+        <PlaceSearchPage
+          places={places}
+          start={activeDay.start}
+          goal={activeDay.goal}
+          query={query}
+          searching={searching}
+          results={results}
+          error={searchError}
+          source={source}
+          choosingPlace={choosingPlace}
+          endpointTarget={endpointTarget}
+          candidateFor={candidateFor}
+          insertIndex={insertIndex}
+          insertionFrom={insertionFrom}
+          insertionTo={insertionTo}
+          previousPlace={searchPreviousPlace}
+          savedPlaces={savedPlaces}
+          savedCategories={SAVED_CATEGORIES}
+          savedCategory={routeSavedCategory}
+          filteredSavedPlaces={routeSavedPlaces}
+          savedPlacesRef={savedPlacesRef}
+          onQueryChange={setQuery}
+          onSearch={search}
+          onCancelSelection={() => {
+            setEndpointTarget(null);
+            setCandidateFor(null);
+            setInsertIndex(null);
+            setTab("plan");
+          }}
+          onScrollToSaved={() => savedPlacesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onToggleSaved={toggleSaved}
+          onSelectPlace={(place) =>
+            endpointTarget ? setEndpoint(place) : candidateFor ? addCandidate(place) : addPlace(place)
+          }
+          onSavedCategoryChange={setRouteSavedCategory}
+          onOpenSavedPlaces={() => setTab("saved")}
+        />
+      )}
+      {tab === "trips" && (
+        <TripList
+          trips={trips}
+          displayedTrips={displayedTrips}
+          activeTripId={activeTripId}
+          onAdd={addTrip}
+          onOpen={openTrip}
+          onRename={renameTrip}
+          onRemove={removeTrip}
+        />
+      )}
+      {tab === "saved" && (
+        <SavedPlacesPage
+          places={savedPlaces}
+          filteredPlaces={filteredSavedPlaces}
+          categories={SAVED_CATEGORIES}
+          activeCategory={savedCategory}
+          onCategoryChange={setSavedCategory}
+          onAddCategory={addSavedCategory}
+          onOpenSearch={() => {
+            setSavedSearchOpen(true);
+            setResults([]);
+            setSearchError("");
+            setQuery("");
+          }}
+          onRemove={removeSavedPlace}
+          onRemoveCategory={removePlaceCategory}
+          onEditCategories={editSavedCategory}
+          onEditMemo={editMemo}
+        />
+      )}
+      {savedSearchOpen && tab === "saved" && (
+        <SavedPlaceSearchOverlay
+          query={query}
+          results={results}
+          searching={searching}
+          error={searchError}
+          savedPlaces={savedPlaces}
+          onQueryChange={setQuery}
+          onSearch={search}
+          onDismiss={closeSavedSearch}
+          onSave={openSaveCategoryPicker}
+        />
+      )}
+      {pendingSavePlace && (
+        <SaveCategoryDialog
+          place={pendingSavePlace}
+          categories={savedCategories}
+          selectedCategories={pendingSaveCategories}
+          onToggle={togglePendingSaveCategory}
+          onAddCategory={addSavedCategory}
+          onSave={() => savePlaceInCategories(pendingSavePlace)}
+          onClose={closeSaveCategoryPicker}
+        />
+      )}
+      {categoryManagerOpen && (
+        <CategoryManagerDialog
+          categories={savedCategories}
+          places={savedPlaces}
+          onRename={renameSavedCategory}
+          onDelete={deleteSavedCategory}
+          onAdd={addSavedCategory}
+          onClose={() => setCategoryManagerOpen(false)}
+        />
+      )}
+      {categoryPlace && (
+        <PlaceCategoryDialog
+          place={categoryPlace}
+          categories={savedCategories}
+          onChange={(categories) => updatePlaceCategories(categoryPlace, categories)}
+          onAddCategory={addSavedCategory}
+          onClose={() => setCategoryPlace(null)}
+        />
+      )}
+      {tripCreator && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setTripCreator(null);
+          }}
+        >
+          <section
+            className="app-dialog trip-creator-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="trip-creator-title"
+          >
+            <div className="dialog-title">
+              <div>
+                <span>새로운 일정</span>
+                <h2 id="trip-creator-title">새 여행 만들기</h2>
+              </div>
+              <button onClick={() => setTripCreator(null)} aria-label="닫기">
+                ×
+              </button>
+            </div>
+            <label className="trip-field">
+              <span>
+                여행 이름 <strong>필수</strong>
+              </span>
+              <input
+                value={tripCreator.title}
+                onChange={(event) => setTripCreator({ ...tripCreator, title: event.target.value, error: "" })}
+                maxLength={40}
+                placeholder="예: 강원도 가족 여행"
+              />
+            </label>
+            <DateRangePicker
+              startDate={tripCreator.startDate}
+              endDate={tripCreator.endDate}
+              onChange={(startDate, endDate) => setTripCreator({ ...tripCreator, startDate, endDate, error: "" })}
+            />
+            {tripCreator.error && <p className="dialog-error">{tripCreator.error}</p>}
+            <div className="dialog-actions">
+              <button onClick={() => setTripCreator(null)}>취소</button>
+              <button className="dialog-primary" onClick={createTrip}>
+                여행 만들기
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {dateEditor && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDateEditor(null);
+          }}
+        >
+          <section
+            className="app-dialog date-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="date-editor-title"
+          >
+            <div className="dialog-title">
+              <div>
+                <span>{days.find((day) => day.id === dateEditor.dayId)?.label}</span>
+                <h2 id="date-editor-title">여행 날짜 수정</h2>
+              </div>
+              <button onClick={() => setDateEditor(null)} aria-label="닫기">
+                ×
+              </button>
+            </div>
+            <input
+              type="date"
+              value={dateEditor.value}
+              onChange={(event) => setDateEditor({ ...dateEditor, value: event.target.value })}
+            />
+            <p className="date-dialog-help">선택한 일차 이후의 날짜도 연속되도록 자동으로 변경됩니다.</p>
+            <div className="dialog-actions">
+              <button onClick={() => setDateEditor(null)}>취소</button>
+              <button className="dialog-primary" onClick={saveDayDate}>
+                날짜 저장
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {editor && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setEditor(null);
+          }}
+        >
+          <section className="app-dialog" role="dialog" aria-modal="true" aria-labelledby="text-editor-title">
+            <div className="dialog-title">
+              <div>
+                <span>{editor.kind === "memo" ? "방문 전에 기억할 정보" : "길담"}</span>
+                <h2 id="text-editor-title">{editor.title}</h2>
+              </div>
+              <button onClick={() => setEditor(null)} aria-label="닫기">
+                ×
+              </button>
+            </div>
+            {editor.kind === "memo" ? (
+              <textarea
+                value={editor.value}
+                onChange={(event) => setEditor({ ...editor, value: event.target.value })}
+                placeholder="추천 메뉴, 주차 정보, 운영 시간 등을 기록하세요"
+                rows={5}
+              />
+            ) : (
+              <input
+                value={editor.value}
+                onChange={(event) => setEditor({ ...editor, value: event.target.value })}
+                maxLength={40}
+                placeholder={editor.kind.startsWith("category") ? "카테고리 이름" : "여행 이름"}
+              />
+            )}{" "}
+            {editorError && <p className="dialog-error">{editorError}</p>}
+            <div className="dialog-actions">
+              <button onClick={() => setEditor(null)}>취소</button>
+              <button className="dialog-primary" onClick={submitEditor}>
+                저장
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      <BottomNavigation tab={tab} onChange={changeTab} />
+    </main>
+  );
 }
-function SectionTitle({title,subtitle,action,onClick,compact=false}:{title:string;subtitle:string;action?:string;onClick?:()=>void;compact?:boolean}){return <div className={`section-heading ${compact?"compact":""}`}><div><p>{title}</p><span>{subtitle}</span></div>{action&&<button onClick={onClick}>{action}</button>}</div>}
-function DaySwipePreview({day,direction,tripTitle,tripRange}:{day:DayPlan;direction:"previous"|"next";tripTitle:string;tripRange:string}){const stops=[day.start,...day.places,day.goal];return <div className={`day-swipe-preview ${direction}`} aria-hidden="true"><div className="swipe-preview-hero"><div className="swipe-preview-hero-top"><span>{tripRange}</span><span>맑음 27°</span></div><strong>{tripTitle}</strong><div className="swipe-preview-stats"><span>{day.label}</span><span>경유지 {day.places.length}곳</span><span>자동 저장</span></div></div><div className="swipe-preview-days"><div><strong>{day.label}</strong><span>{day.date}</span></div></div><div className="swipe-preview-pin-row"><span>스크롤할 때 지도 고정</span></div><div className="swipe-preview-map"><i/><i/><i/><span>{day.start.name} → {day.goal.name}</span></div><div className="swipe-preview-heading"><strong>{day.label} 일정</strong><span>각 구간의 거리와 예상 시간</span></div><div className="swipe-preview-stops">{stops.slice(0,6).map((place,index)=><div key={`${place.name}-${index}`}><i>{index===0?"S":index===stops.length-1?"G":index}</i><span>{place.name}</span></div>)}</div></div>}
-function ScheduleStop({place,index,leg,alternatives,dragging,onBeginDrag,onContinueDrag,onEndDrag,onRemove,onEditMemo,onAddCandidate,onRemoveCandidate,onPromoteCandidate,onPreviewCandidate}:{place:Place;index:number;leg?:RouteLeg;alternatives:Place[];dragging:boolean;onBeginDrag:(index:number,event:ReactPointerEvent<HTMLButtonElement>)=>void;onContinueDrag:(event:ReactPointerEvent<HTMLButtonElement>)=>void;onEndDrag:()=>void;onRemove:(id:string)=>void;onEditMemo:(place:Place)=>void;onAddCandidate:(id:string)=>void;onRemoveCandidate:(mainId:string,id:string)=>void;onPromoteCandidate:(mainId:string,id:string)=>void;onPreviewCandidate:(mainId:string,place?:Place)=>void}){
-  const trackRef=useRef<HTMLDivElement>(null);
-  const [activeSlide,setActiveSlide]=useState(0);
-  const slideCount=alternatives.length+1;
-  function goToSlide(target:number){const next=Math.max(0,Math.min(target,slideCount-1));const element=trackRef.current?.children.item(next) as HTMLElement|null;element?.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});setActiveSlide(next);onPreviewCandidate(place.id,next===0?undefined:alternatives[next-1])}
-  return <article data-order-index={index} className={`timeline-item user-stop candidate-stop ${dragging?"dragging":""}`}>
-    <button className="drag-handle" onPointerDown={(event)=>onBeginDrag(index,event)} onPointerMove={onContinueDrag} onPointerUp={onEndDrag} onPointerCancel={onEndDrag} aria-label={`${place.name} 순서 끌기`}>≡</button>
-    <div className="stop-dot">{index+1}</div>
-    <div className="candidate-carousel">
-      <div ref={trackRef} className={`candidate-track ${alternatives.length?"has-alternatives":""}`} onScroll={(event)=>{const track=event.currentTarget;const center=track.scrollLeft+track.clientWidth/2;let closest=0;let distance=Number.POSITIVE_INFINITY;Array.from(track.children).forEach((child,i)=>{const element=child as HTMLElement;const nextDistance=Math.abs(element.offsetLeft+element.offsetWidth/2-center);if(nextDistance<distance){closest=i;distance=nextDistance}});if(closest!==activeSlide){setActiveSlide(closest);onPreviewCandidate(place.id,closest===0?undefined:alternatives[closest-1])}}}>
-        <div className="candidate-slide main-slide"><button className="schedule-remove" onClick={()=>onRemove(place.id)} aria-label={`${place.name} 일정에서 삭제`} title="일정에서 삭제">×</button><span className="candidate-kind">메인 · 1/{slideCount}</span><div className="stop-title-row"><h3>{place.name}</h3></div><p>{place.category} · {place.address}</p>{place.memo&&<p className="place-memo">메모 · {place.memo}</p>}<LegSummary leg={leg}/><div className="stop-actions"><button className={`place-memo-icon schedule-memo-icon ${place.memo?"has-memo":""}`} onClick={()=>onEditMemo(place)} aria-label={`${place.name} ${place.memo?"메모 수정":"메모 추가"}`} title={place.memo?"메모 수정":"메모 추가"}><span aria-hidden="true"/></button><NavigationLinks place={place}/><button className="candidate-add" onClick={()=>onAddCandidate(place.id)}>＋ 후보</button></div></div>
-        {alternatives.map((candidate,i)=><div className="candidate-slide alternative" key={candidate.id}><button className="schedule-remove" onClick={()=>onRemoveCandidate(place.id,candidate.id)} aria-label={`${candidate.name} 후보 삭제`} title="후보 삭제">×</button><span className="candidate-kind">후보 {i+1} · {i+2}/{slideCount}</span><div className="stop-title-row"><h3>{candidate.name}</h3></div><p>{candidate.category} · {candidate.address}</p>{candidate.memo&&<p className="place-memo">메모 · {candidate.memo}</p>}<div className="stop-actions"><button className="promote-candidate" onClick={()=>onPromoteCandidate(place.id,candidate.id)} aria-label={`${candidate.name} 메인 장소로 변경`} title="메인 장소로 변경"><span aria-hidden="true">⇤</span></button><button className={`place-memo-icon schedule-memo-icon ${candidate.memo?"has-memo":""}`} onClick={()=>onEditMemo(candidate)} aria-label={`${candidate.name} ${candidate.memo?"메모 수정":"메모 추가"}`} title={candidate.memo?"메모 수정":"메모 추가"}><span aria-hidden="true"/></button><NavigationLinks place={candidate}/></div></div>)}
-      </div>
-      {alternatives.length>0&&<><button className="candidate-arrow previous" onClick={()=>goToSlide(activeSlide-1)} disabled={activeSlide===0} aria-label="이전 후보">‹</button><button className="candidate-arrow next" onClick={()=>goToSlide(activeSlide+1)} disabled={activeSlide===slideCount-1} aria-label="다음 후보">›</button><div className="candidate-dots" aria-label={`${activeSlide+1}/${slideCount}`}>{Array.from({length:slideCount},(_,i)=><button key={i} className={i===activeSlide?"active":""} onClick={()=>goToSlide(i)} aria-label={`${i+1}번째 후보 보기`}/>)}</div></>}
-    </div>
-  </article>
-}
-
-function TimelineInsertion({index,disabled,onAdd}:{index:number;disabled:boolean;onAdd:(index:number)=>void}){return <div className="timeline-insertion"><button onClick={()=>onAdd(index)} disabled={disabled} aria-label={`${index===0?"출발지 다음":`${index}번째 장소 다음`}에 장소 추가`}><span>＋</span><strong>{disabled?"경유지 최대 30곳":"장소 추가"}</strong></button></div>}
-function NavigationLinks({place}:{place:{name:string;longitude:number;latitude:number}}){const name=encodeURIComponent(place.name);const tmap=`tmap://route?goalname=${name}&goalx=${place.longitude}&goaly=${place.latitude}`;const naver=`nmap://navigation?dlat=${place.latitude}&dlng=${place.longitude}&dname=${name}&appname=gildam-trip`;return <div className="navigation-links" aria-label={`${place.name} 내비게이션 앱으로 열기`}><a href={tmap} aria-label={`TMAP으로 ${place.name} 길 안내`} title="TMAP"><i className="nav-app-icon tmap-icon">T</i></a><button type="button" onClick={()=>openKakaoNavi(place)} disabled={!KAKAO_JAVASCRIPT_KEY} title={!KAKAO_JAVASCRIPT_KEY?"카카오 JavaScript 키 설정 필요":"카카오내비"} aria-label={`카카오내비로 ${place.name} 길 안내`}><i className="nav-app-icon kakao-icon">K</i></button><a href={naver} aria-label={`네이버지도로 ${place.name} 길 안내`} title="네이버지도"><i className="nav-app-icon naver-icon">N</i></a></div>}
-function LegSummary({leg}:{leg?:RouteLeg}){if(!leg)return <span className="leg-summary loading">이전 장소에서 경로 계산 중…</span>;if(leg.distance===0&&leg.duration===0)return <span className="leg-summary">이전 장소와 같은 위치</span>;const km=leg.distance>=10000?`${Math.round(leg.distance/1000)}km`:`${(leg.distance/1000).toFixed(1)}km`;const minutes=Math.max(1,Math.round(leg.duration/60000));const time=minutes>=60?`${Math.floor(minutes/60)}시간 ${minutes%60?`${minutes%60}분`:""}`:`${minutes}분`;return <span className="leg-summary">이전 장소에서 · 자동차 · {km} · {time}</span>}

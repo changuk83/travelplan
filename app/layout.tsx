@@ -55,11 +55,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
-        <a className="google-test-shortcut" href="/overseas" aria-label="Google 해외 일정 열기">해외 일정 <span aria-hidden="true">G</span></a>
+        <a className="google-test-shortcut" href="/overseas" aria-label="Google 해외 일정 열기">
+          해외 일정 <span aria-hidden="true">G</span>
+        </a>
       </body>
     </html>
   );

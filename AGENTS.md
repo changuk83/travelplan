@@ -15,7 +15,11 @@
 
 ## 주요 파일
 
-- `app/page.tsx`: 대부분의 화면, 여행·일정·내 장소 상태와 상호작용
+- `app/page.tsx`: 국내 여행 화면의 상태 조합과 사용자 동작을 연결하는 컨테이너
+- `app/components/`: 여행 헤더·날짜 전환·일정 타임라인·장소 검색·내 장소·다이얼로그 UI
+- `app/hooks/`: 여행, 내 장소, 검색, 클라우드 동기화, 스와이프, 일정 드래그 상태 로직
+- `app/domain/`: 공통 타입과 날짜·여행·장소 도메인 함수
+- `app/lib/`: 카카오내비 연결과 외부 지도 SDK 타입 정의
 - `app/globals.css`: 전체 UI 및 모바일 반응형 스타일
 - `app/NaverMap.tsx`: 네이버 지도, 마커, 전체 경로 표시
 - `app/api/places/search/route.ts`: 로컬 개발용 장소 검색 API
@@ -24,6 +28,7 @@
 - `api-worker/wrangler.jsonc`: Worker, D1, CORS, 호출 제한 설정
 - `api-worker/migrations/`: D1 스키마 이력
 - `.openai/hosting.json`: 공개 사이트 호스팅 설정
+- `worker-configuration.d.ts`: Wrangler가 생성한 Cloudflare Worker·D1 런타임 타입
 
 ## 현재 구현 기능
 
@@ -132,6 +137,8 @@
   - `gildam-device-id`
 - `NEXT_PUBLIC_API_BASE_URL`이 설정되면 Worker의 `/api/state`와 동기화한다.
 - 변경 후 700ms 디바운스로 전체 상태를 `PUT`한다.
+- 날짜 목록은 별도 복사본 없이 활성 여행의 `days`를 단일 원본으로 사용한다. 날짜 변경은 `useTrips`의 `setDays`가 활성 여행을 직접 갱신한다.
+- 로컬 저장소 복원은 초기 렌더 중 동기 상태 변경을 피하도록 다음 애니메이션 프레임에서 적용한다.
 - 현재 Worker는 기기 ID를 받지만 조회·저장은 항상 `DEFAULT_USER_ID = "1"`을 사용한다.
 - 로그인 도입 시 `DEFAULT_USER_ID` 고정 로직을 실제 인증 사용자 ID로 교체해야 한다.
 
@@ -192,9 +199,14 @@ npm install
 npm run dev
 npm run build
 npm test
+npm run format
+npm run check
 ```
 
 - UI 변경 후 최소한 `npm run build`로 확인한다.
+- 코드 포맷은 루트 `.prettierrc.json`을 기준으로 하며, 변경 후 `npm run format:check`로 확인한다.
+- 포맷·ESLint·TypeScript를 한 번에 확인할 때는 `npm run check`를 사용한다.
+- `api-worker/wrangler.jsonc`의 바인딩을 변경했다면 `npx wrangler types worker-configuration.d.ts --config api-worker/wrangler.jsonc`로 Worker 타입을 다시 생성한다.
 - 모바일 변경은 iPhone Safari 크기에서 입력 포커스, 가로 넘침, 내부 세로 스크롤, 하단 고정 탭을 확인한다.
 - 지도/검색/내비게이션 변경은 실제 키가 있는 환경에서 별도로 확인한다.
 
