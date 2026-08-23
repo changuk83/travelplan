@@ -277,14 +277,17 @@ export default function OverseasPlanner() {
       }),
     );
   }
+  function openDomesticTrip() {
+    window.location.assign("/");
+  }
 
   const stops = [activeDay.start, ...activeDay.places, activeDay.goal];
   return (
     <main className="overseas-shell">
       <header className="overseas-header">
-        <Link href="/" aria-label="국내 일정으로 돌아가기">
+        <button type="button" onClick={openDomesticTrip} aria-label="국내 일정으로 돌아가기">
           ‹
-        </Link>
+        </button>
         <div>
           <span>OVERSEAS TRIP</span>
           <h1>해외 일정</h1>
@@ -490,9 +493,9 @@ export default function OverseasPlanner() {
         <button className={tab === "trips" ? "active" : ""} type="button" onClick={() => setTab("trips")}>
           <span>✈</span>해외 여행
         </button>
-        <Link href="/">
+        <button type="button" onClick={openDomesticTrip}>
           <span>⌂</span>국내 여행
-        </Link>
+        </button>
       </nav>
     </main>
   );
