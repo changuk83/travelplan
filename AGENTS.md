@@ -152,6 +152,7 @@ GOOGLE_MAPS_API_KEY=
 - Google 브라우저 키를 포함한 배포 빌드는 `.env.local` 값을 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` 빌드 환경변수로 명시적으로 전달한다.
 - Google 서버 키는 Routes API와 Places API (New)만 허용하며 Worker secret으로 관리한다.
 - Google Places 콘텐츠는 네이버 지도 위에 표시하지 않고 `/google-test`의 Google 지도에서만 표시한다.
+- 앱 내부 `latitude/longitude` 좌표는 Google Maps JavaScript API에 전달하기 전에 `lat/lng`로 변환한다.
 
 Cloudflare Worker에 필요한 바인딩/비밀값 이름:
 

@@ -48,6 +48,10 @@ function distance(value: number) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}km` : `${Math.round(value)}m`;
 }
 
+function googleLatLng(point: Point) {
+  return { lat: point.latitude, lng: point.longitude };
+}
+
 function decodePolyline(encoded: string): Point[] {
   const points: Point[] = [];
   let index = 0;
@@ -88,7 +92,7 @@ export default function GoogleMapTest() {
       if (!window.google || !mapNode.current) return;
       const route = samples[sample];
       const map = mapInstance.current ?? new window.google.maps.Map(mapNode.current, {
-        center: route.start,
+        center: googleLatLng(route.start),
         zoom: 8,
         mapTypeControl: false,
         streetViewControl: false,
@@ -98,7 +102,7 @@ export default function GoogleMapTest() {
       overlays.current.forEach((overlay) => overlay.setMap(null));
       overlays.current = [];
       const bounds = new window.google.maps.LatLngBounds();
-      const path = result?.encodedPolyline ? decodePolyline(result.encodedPolyline) : [route.start, route.goal];
+      const path = (result?.encodedPolyline ? decodePolyline(result.encodedPolyline) : [route.start, route.goal]).map(googleLatLng);
       path.forEach((point) => bounds.extend(point));
       const line = new window.google.maps.Polyline({ map, path, strokeColor: "#18aa68", strokeWeight: 6, strokeOpacity: 0.95 });
       overlays.current.push(line);
@@ -107,9 +111,10 @@ export default function GoogleMapTest() {
         ...(result?.places ?? []).map((place, index) => ({ ...place.location, label: String(index + 1), title: place.name })),
         { ...route.goal, label: "G", title: "도착" },
       ].forEach((point) => {
-        const marker = new window.google.maps.Marker({ map, position: point, label: point.label, title: point.title });
+        const position = googleLatLng(point);
+        const marker = new window.google.maps.Marker({ map, position, label: point.label, title: point.title });
         overlays.current.push(marker);
-        bounds.extend(point);
+        bounds.extend(position);
       });
       map.fitBounds(bounds, 42);
     };
@@ -124,7 +129,7 @@ export default function GoogleMapTest() {
     }
     const script = document.createElement("script");
     script.id = "google-maps-script";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_BROWSER_KEY)}&language=ko`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_BROWSER_KEY)}&language=ko&loading=async`;
     script.async = true;
     script.onload = draw;
     script.onerror = () => setError("Google 지도를 불러오지 못했습니다. 브라우저 키의 도메인 제한을 확인해 주세요.");
