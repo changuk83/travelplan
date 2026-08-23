@@ -21,6 +21,7 @@ type Day = { id:string; label:string; date:string; dateValue?:string; start:{nam
 type Trip = { id:string; title:string; days:Day[]; updatedAt:number };
 
 const DEFAULT_USER_ID = "1";
+const ROUTE_CACHE_SECONDS = 60 * 60 * 6;
 
 const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) } });
 const clean = (value = "") => value.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
@@ -42,11 +43,25 @@ function cors(request: Request, env: Env) {
   return allowed.includes(origin) ? { "access-control-allow-origin": origin, "access-control-allow-methods": "GET,PUT,POST,OPTIONS", "access-control-allow-headers": "content-type,x-gildam-device", vary: "Origin" } : {};
 }
 
-async function directions(request: Request, env: Env) {
-  const { waypoints = [], start, goal } = await request.json() as { waypoints?:Place[]; start?:Place; goal?:Place };
+function routeCacheRequest(request:Request,points:Array<{longitude:number;latitude:number}>,scope?:{tripId?:string;dayId?:string;mode?:"schedule"|"preview"}){
+  const url=new URL("/__gildam-cache/routes/v2",request.url);
+  url.searchParams.set("user",DEFAULT_USER_ID);
+  url.searchParams.set("trip",scope?.tripId??"unscoped");
+  url.searchParams.set("day",scope?.dayId??"unscoped");
+  url.searchParams.set("mode",scope?.mode==="preview"?"preview":"schedule");
+  url.searchParams.set("option","traoptimal");
+  url.searchParams.set("points",points.map((point)=>`${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`).join("|"));
+  return new Request(url,{method:"GET"});
+}
+
+async function directions(request: Request, env: Env, ctx:ExecutionContext) {
+  const { waypoints = [], start, goal, cacheScope } = await request.json() as { waypoints?:Place[]; start?:Place; goal?:Place; cacheScope?:{userId?:number;tripId?:string;dayId?:string;mode?:"schedule"|"preview"} };
   if (!env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID || !env.NAVER_MAP_CLIENT_SECRET) return json({error:"지도 API 키가 설정되지 않았습니다."},{status:500});
   if (waypoints.length > 30) return json({error:"경유지는 최대 30곳까지 추가할 수 있습니다."},{status:400});
   const points = [start ?? {longitude:127.095,latitude:37.322}, ...waypoints, goal ?? {longitude:128.467,latitude:38.378}];
+  const cacheRequest=routeCacheRequest(request,points,cacheScope);
+  const cached=await caches.default.match(cacheRequest);
+  if(cached){const headers=new Headers(cached.headers);headers.set("x-gildam-route-cache","HIT");return new Response(cached.body,{status:cached.status,statusText:cached.statusText,headers});}
   const chunks:Place[][]=[];
   for(let index=0;index<points.length-1;index+=6)chunks.push(points.slice(index,Math.min(index+7,points.length)) as Place[]);
   const routes=await Promise.all(chunks.map(async(points)=>{
@@ -63,7 +78,9 @@ async function directions(request: Request, env: Env) {
   }));
   const path:number[][]=[];const legs:{distance:number;duration:number}[]=[];let totalDistance=0;let totalDuration=0;
   routes.forEach((route,index)=>{path.push(...(index?(route?.path??[]).slice(1):route?.path??[]));let distance=0;let duration=0;for(const guide of route?.guide??[]){distance+=guide.distance??0;duration+=guide.duration??0;if(guide.type===87||guide.type===88){legs.push({distance,duration});distance=0;duration=0;}}if(distance||duration)legs.push({distance,duration});totalDistance+=route?.summary?.distance??0;totalDuration+=route?.summary?.duration??0;});
-  return json({path,summary:{distance:totalDistance,duration:totalDuration},legs});
+  const response=json({path,summary:{distance:totalDistance,duration:totalDuration},legs},{headers:{"cache-control":`public, max-age=${ROUTE_CACHE_SECONDS}`,"x-gildam-route-cache":"MISS"}});
+  ctx.waitUntil(caches.default.put(cacheRequest,response.clone()));
+  return response;
 }
 
 async function search(request: Request, env: Env) {
@@ -134,4 +151,4 @@ async function putState(deviceId:string, request:Request, env:Env) {
   await env.DB.batch(statements);return json({ok:true,updatedAt:now});
 }
 
-export default {async fetch(request:Request,env:Env){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await directions(request,env);else if(url.pathname==="/api/google/route-search"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await googleRouteSearch(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=(await enforceRateLimit(request,env.SEARCH_RATE_LIMITER))??await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));const limiter=request.method==="GET"?env.STATE_READ_RATE_LIMITER:request.method==="PUT"?env.STATE_WRITE_RATE_LIMITER:null;const blocked=limiter?await enforceRateLimit(request,limiter):null;response=blocked??(!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405}));}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
+export default {async fetch(request:Request,env:Env,ctx:ExecutionContext){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await directions(request,env,ctx);else if(url.pathname==="/api/google/route-search"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await googleRouteSearch(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=(await enforceRateLimit(request,env.SEARCH_RATE_LIMITER))??await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));const limiter=request.method==="GET"?env.STATE_READ_RATE_LIMITER:request.method==="PUT"?env.STATE_WRITE_RATE_LIMITER:null;const blocked=limiter?await enforceRateLimit(request,limiter):null;response=blocked??(!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405}));}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);next.set("access-control-expose-headers","x-gildam-route-cache");return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
