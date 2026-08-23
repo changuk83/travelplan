@@ -25,7 +25,7 @@ type SearchResult = {
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const GOOGLE_BROWSER_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+const GOOGLE_BROWSER_KEY = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "").trim();
 const samples = {
   california: {
     label: "샌프란시스코 → 몬터레이",

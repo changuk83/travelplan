@@ -149,6 +149,7 @@ GOOGLE_MAPS_API_KEY=
 - 카카오 개발자 콘솔의 JavaScript SDK 도메인에 공개 사이트 원본 주소를 등록해야 한다.
 - 현재 카카오내비 좌표 전달 형식은 `x=경도`, `y=위도`, `coordType="wgs84"`로 올바르다.
 - Google 브라우저 키는 Maps JavaScript API만 허용하고 웹사이트 출처로 제한한다.
+- Google 브라우저 키를 포함한 배포 빌드는 `.env.local` 값을 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` 빌드 환경변수로 명시적으로 전달한다.
 - Google 서버 키는 Routes API와 Places API (New)만 허용하며 Worker secret으로 관리한다.
 - Google Places 콘텐츠는 네이버 지도 위에 표시하지 않고 `/google-test`의 Google 지도에서만 표시한다.
 
