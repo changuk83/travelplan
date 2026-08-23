@@ -117,15 +117,19 @@ async function search(request: Request, env: Env) {
 
 async function googleRouteSearch(request:Request,env:Env){
   if(!env.GOOGLE_MAPS_API_KEY)return json({error:"Google 서버 API 키가 아직 설정되지 않았습니다."},{status:503});
-  const {query,start,goal}=await request.json() as {query?:string;start?:{latitude:number;longitude:number};goal?:{latitude:number;longitude:number}};
-  if(!query?.trim()||!start||!goal)return json({error:"검색어와 출발·도착 좌표가 필요합니다."},{status:400});
-  const routeResponse=await fetch("https://routes.googleapis.com/directions/v2:computeRoutes",{method:"POST",headers:{"content-type":"application/json","X-Goog-Api-Key":env.GOOGLE_MAPS_API_KEY,"X-Goog-FieldMask":"routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline"},body:JSON.stringify({origin:{location:{latLng:start}},destination:{location:{latLng:goal}},travelMode:"DRIVE",routingPreference:"TRAFFIC_AWARE"})});
+  const {query,start,goal,waypoints=[]}=await request.json() as {query?:string;start?:{latitude:number;longitude:number};goal?:{latitude:number;longitude:number};waypoints?:Array<{latitude:number;longitude:number}>};
+  if(!start||!goal)return json({error:"출발·도착 좌표가 필요합니다."},{status:400});
+  if(waypoints.length>25)return json({error:"Google 해외 경로의 경유지는 최대 25곳까지 추가할 수 있습니다."},{status:400});
+  const routeResponse=await fetch("https://routes.googleapis.com/directions/v2:computeRoutes",{method:"POST",headers:{"content-type":"application/json","X-Goog-Api-Key":env.GOOGLE_MAPS_API_KEY,"X-Goog-FieldMask":"routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration"},body:JSON.stringify({origin:{location:{latLng:start}},destination:{location:{latLng:goal}},intermediates:waypoints.map((point)=>({location:{latLng:point}})),travelMode:"DRIVE",routingPreference:"TRAFFIC_AWARE"})});
   const routeData=await routeResponse.json() as any;if(!routeResponse.ok)return json({error:routeData.error?.message||"Google 경로를 계산하지 못했습니다."},{status:routeResponse.status});
   const route=routeData.routes?.[0];const encodedPolyline=route?.polyline?.encodedPolyline;if(!encodedPolyline)return json({error:"Google 경로 결과가 없습니다."},{status:404});
-  const placesResponse=await fetch("https://places.googleapis.com/v1/places:searchText",{method:"POST",headers:{"content-type":"application/json","X-Goog-Api-Key":env.GOOGLE_MAPS_API_KEY,"X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.location,places.primaryTypeDisplayName,routingSummaries"},body:JSON.stringify({textQuery:query.trim(),languageCode:"ko",maxResultCount:10,searchAlongRouteParameters:{polyline:{encodedPolyline}},routingParameters:{origin:start}})});
-  const placesData=await placesResponse.json() as any;if(!placesResponse.ok)return json({error:placesData.error?.message||"Google 장소를 검색하지 못했습니다."},{status:placesResponse.status});
-  const parseSeconds=(value?:string)=>Number(value?.replace("s","")??0);const places=(placesData.places??[]).map((place:any,index:number)=>{const legs=placesData.routingSummaries?.[index]?.legs??[];return{id:place.id,name:place.displayName?.text??"이름 없는 장소",address:place.formattedAddress??"",category:place.primaryTypeDisplayName?.text??"장소",location:place.location,detourDistanceMeters:Math.max(0,legs.reduce((sum:number,leg:any)=>sum+(leg.distanceMeters??0),0)-(route.distanceMeters??0)),detourDurationSeconds:Math.max(0,legs.reduce((sum:number,leg:any)=>sum+parseSeconds(leg.duration),0)-parseSeconds(route.duration))}});
-  return json({encodedPolyline,route:{distanceMeters:route.distanceMeters??0,durationSeconds:parseSeconds(route.duration)},places});
+  const parseSeconds=(value?:string)=>Number(value?.replace("s","")??0);let places:any[]=[];
+  if(query?.trim()){
+    const placesResponse=await fetch("https://places.googleapis.com/v1/places:searchText",{method:"POST",headers:{"content-type":"application/json","X-Goog-Api-Key":env.GOOGLE_MAPS_API_KEY,"X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.location,places.primaryTypeDisplayName,routingSummaries"},body:JSON.stringify({textQuery:query.trim(),languageCode:"ko",maxResultCount:15,searchAlongRouteParameters:{polyline:{encodedPolyline}},routingParameters:{origin:start}})});
+    const placesData=await placesResponse.json() as any;if(!placesResponse.ok)return json({error:placesData.error?.message||"Google 장소를 검색하지 못했습니다."},{status:placesResponse.status});
+    places=(placesData.places??[]).map((place:any,index:number)=>{const legs=placesData.routingSummaries?.[index]?.legs??[];return{id:place.id,name:place.displayName?.text??"이름 없는 장소",address:place.formattedAddress??"",category:place.primaryTypeDisplayName?.text??"장소",location:place.location,detourDistanceMeters:Math.max(0,legs.reduce((sum:number,leg:any)=>sum+(leg.distanceMeters??0),0)-(route.distanceMeters??0)),detourDurationSeconds:Math.max(0,legs.reduce((sum:number,leg:any)=>sum+parseSeconds(leg.duration),0)-parseSeconds(route.duration))}});
+  }
+  return json({encodedPolyline,route:{distanceMeters:route.distanceMeters??0,durationSeconds:parseSeconds(route.duration),legs:(route.legs??[]).map((leg:any)=>({distanceMeters:leg.distanceMeters??0,durationSeconds:parseSeconds(leg.duration)}))},places});
 }
 
 async function getState(deviceId:string, env:Env) {
