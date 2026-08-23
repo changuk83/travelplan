@@ -280,7 +280,8 @@
   border-top: 1px solid #d9e2de;
   background: #fffefaf5;
 }
-.overseas-bottom-nav a {
+.overseas-bottom-nav a,
+.overseas-bottom-nav button {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -289,14 +290,84 @@
   gap: 3px;
   color: #7c8986;
   font-size: 9px;
+  font-family: inherit;
   text-decoration: none;
+  border: 0;
+  background: transparent;
 }
-.overseas-bottom-nav a span {
+.overseas-bottom-nav a span,
+.overseas-bottom-nav button span {
   font-size: 17px;
 }
-.overseas-bottom-nav a.active {
+.overseas-bottom-nav a.active,
+.overseas-bottom-nav button.active {
   color: var(--ocean);
   font-weight: 900;
+}
+.overseas-trip-list-page {
+  padding: 18px 16px;
+}
+.overseas-trip-list-page > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.overseas-trip-list-page > header span {
+  color: var(--ocean);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+.overseas-trip-list-page > header h2 {
+  margin: 3px 0 0;
+  font-size: 21px;
+}
+.overseas-trip-list-page > header button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ocean);
+  color: #fff;
+  font-size: 20px;
+}
+.overseas-trip-list-card {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 17px 44px 17px 18px;
+  border: 1px solid #d7e1de;
+  border-radius: 18px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 7px 18px #153f4312;
+}
+.overseas-trip-list-card span {
+  color: var(--ocean);
+  font-size: 9px;
+  font-weight: 800;
+}
+.overseas-trip-list-card strong {
+  margin-top: 7px;
+  font-size: 15px;
+}
+.overseas-trip-list-card small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.overseas-trip-list-card i {
+  position: absolute;
+  top: 50%;
+  right: 17px;
+  transform: translateY(-50%);
+  color: var(--ocean);
+  font-size: 25px;
+  font-style: normal;
 }
 @media (min-width: 700px) {
   body {

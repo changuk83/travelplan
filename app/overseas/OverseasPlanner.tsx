@@ -25,6 +25,7 @@ type RouteResult = {
   };
   places: SearchPlace[];
 };
+type OverseasTab = "plan" | "trips";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const GOOGLE_BROWSER_KEY = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "").trim();
@@ -118,6 +119,7 @@ export default function OverseasPlanner() {
   const [query, setQuery] = useState("cafe");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchPlace[]>([]);
+  const [tab, setTab] = useState<OverseasTab>("plan");
   const activeDay = days.find((day) => day.id === activeDayId) ?? days[0];
 
   useEffect(() => {
@@ -291,173 +293,203 @@ export default function OverseasPlanner() {
           G
         </Link>
       </header>
-      <section className="overseas-trip-card">
-        <div>
-          <span className="overseas-country">🇺🇸 미국 · 캘리포니아</span>
-          <span>5월 12일–14일</span>
-        </div>
-        <h2>캘리포니아 해안 드라이브</h2>
-        <p>3일 여행 · 장소 {days.reduce((sum, day) => sum + day.places.length, 0)}곳</p>
-      </section>
-      <nav className="overseas-days" aria-label="여행 날짜">
-        {days.map((day) => (
-          <button
-            key={day.id}
-            className={day.id === activeDay.id ? "active" : ""}
-            onClick={() => {
-              setActiveDayId(day.id);
-              setSearchResults([]);
-              setSearchOpen(false);
-            }}
-          >
-            <strong>{day.label}</strong>
-            <span>{day.date}</span>
-          </button>
-        ))}
-        <button className="add" aria-label="날짜 추가">
-          ＋
-        </button>
-      </nav>
-      <section className="overseas-map-card">
-        <div className="overseas-map-heading">
-          <div>
-            <span>{routeLoading ? "경로 계산 중…" : "오늘의 이동 경로"}</span>
-            <strong>
-              {activeDay.start.name} → {activeDay.goal.name}
-            </strong>
-          </div>
-          <button type="button" aria-label="지도 고정">
-            ⌖
-          </button>
-        </div>
-        <div ref={mapNode} className="overseas-map">
-          {!GOOGLE_BROWSER_KEY && <p>Google 지도 키를 확인해 주세요.</p>}
-        </div>
-        {result && !routeLoading && (
-          <div className="overseas-route-summary">
-            <span>전체 자동차 경로</span>
-            <strong>
-              {distance(result.route.distanceMeters)} · {duration(result.route.durationSeconds)}
-            </strong>
-          </div>
-        )}
-      </section>
-      {error && <p className="overseas-error">{error}</p>}
-      {searchOpen && (
-        <section className="overseas-search-panel">
-          <header>
+      {tab === "plan" ? (
+        <>
+          <section className="overseas-trip-card">
             <div>
-              <span>경로 주변 장소</span>
-              <strong>
-                {activeDay.start.name} → {activeDay.goal.name}
-              </strong>
+              <span className="overseas-country">🇺🇸 미국 · 캘리포니아</span>
+              <span>5월 12일–14일</span>
             </div>
-            <button
-              onClick={() => {
-                setSearchOpen(false);
-                setSearchResults([]);
-              }}
-              aria-label="검색 닫기"
-            >
-              ×
+            <h2>캘리포니아 해안 드라이브</h2>
+            <p>3일 여행 · 장소 {days.reduce((sum, day) => sum + day.places.length, 0)}곳</p>
+          </section>
+          <nav className="overseas-days" aria-label="여행 날짜">
+            {days.map((day) => (
+              <button
+                key={day.id}
+                className={day.id === activeDay.id ? "active" : ""}
+                onClick={() => {
+                  setActiveDayId(day.id);
+                  setSearchResults([]);
+                  setSearchOpen(false);
+                }}
+              >
+                <strong>{day.label}</strong>
+                <span>{day.date}</span>
+              </button>
+            ))}
+            <button className="add" aria-label="날짜 추가">
+              ＋
             </button>
-          </header>
-          <form onSubmit={search}>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="cafe, restaurant, gas station"
-            />
-            <button disabled={searching}>{searching ? "찾는 중" : "검색"}</button>
-          </form>
-          <p>현재 경로에서 우회가 적은 장소를 Google 지도에서 찾아요.</p>
-          {searchResults.length > 0 && (
-            <div className="overseas-search-results">
-              {searchResults.map((item) => (
-                <article key={item.id}>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <p>
-                      {item.category} · {item.address}
-                    </p>
-                    <span>
-                      경유 시 +{distance(item.detourDistanceMeters)} · +{duration(item.detourDurationSeconds)}
-                    </span>
-                  </div>
-                  <button onClick={() => addPlace(item)}>일정 추가</button>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-      <section className="overseas-schedule">
-        <header>
-          <div>
-            <span>{activeDay.label} 일정</span>
-            <h2>해안도로를 따라 천천히</h2>
-          </div>
-          <button type="button" onClick={() => setSearchOpen(true)}>
-            ＋ 장소 추가
-          </button>
-        </header>
-        {stops.map((stop, index) => (
-          <div className="overseas-stop-wrap" key={`${stop.id}-${index}`}>
-            {index > 0 && (
-              <div className="overseas-leg">
-                <span>자동차</span>
+          </nav>
+          <section className="overseas-map-card">
+            <div className="overseas-map-heading">
+              <div>
+                <span>{routeLoading ? "경로 계산 중…" : "오늘의 이동 경로"}</span>
                 <strong>
-                  {result?.route.legs[index - 1]
-                    ? `${distance(result.route.legs[index - 1].distanceMeters)} · ${duration(result.route.legs[index - 1].durationSeconds)}`
-                    : "경로 계산 중…"}
+                  {activeDay.start.name} → {activeDay.goal.name}
+                </strong>
+              </div>
+              <button type="button" aria-label="지도 고정">
+                ⌖
+              </button>
+            </div>
+            <div ref={mapNode} className="overseas-map">
+              {!GOOGLE_BROWSER_KEY && <p>Google 지도 키를 확인해 주세요.</p>}
+            </div>
+            {result && !routeLoading && (
+              <div className="overseas-route-summary">
+                <span>전체 자동차 경로</span>
+                <strong>
+                  {distance(result.route.distanceMeters)} · {duration(result.route.durationSeconds)}
                 </strong>
               </div>
             )}
-            <article>
-              <i className={index === 0 ? "start" : index === stops.length - 1 ? "goal" : ""}>
-                {index === 0 ? "S" : index === stops.length - 1 ? "G" : index}
-              </i>
+          </section>
+          {error && <p className="overseas-error">{error}</p>}
+          {searchOpen && (
+            <section className="overseas-search-panel">
+              <header>
+                <div>
+                  <span>경로 주변 장소</span>
+                  <strong>
+                    {activeDay.start.name} → {activeDay.goal.name}
+                  </strong>
+                </div>
+                <button
+                  onClick={() => {
+                    setSearchOpen(false);
+                    setSearchResults([]);
+                  }}
+                  aria-label="검색 닫기"
+                >
+                  ×
+                </button>
+              </header>
+              <form onSubmit={search}>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="cafe, restaurant, gas station"
+                />
+                <button disabled={searching}>{searching ? "찾는 중" : "검색"}</button>
+              </form>
+              <p>현재 경로에서 우회가 적은 장소를 Google 지도에서 찾아요.</p>
+              {searchResults.length > 0 && (
+                <div className="overseas-search-results">
+                  {searchResults.map((item) => (
+                    <article key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <p>
+                          {item.category} · {item.address}
+                        </p>
+                        <span>
+                          경유 시 +{distance(item.detourDistanceMeters)} · +{duration(item.detourDurationSeconds)}
+                        </span>
+                      </div>
+                      <button onClick={() => addPlace(item)}>일정 추가</button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+          <section className="overseas-schedule">
+            <header>
               <div>
-                <span>{index === 0 ? "출발" : index === stops.length - 1 ? "도착" : "경유지"}</span>
-                <strong>{stop.name}</strong>
-                <p>
-                  {stop.category} · {stop.address}
-                </p>
+                <span>{activeDay.label} 일정</span>
+                <h2>해안도로를 따라 천천히</h2>
               </div>
-              <div className="overseas-stop-actions">
-                <a href={mapsUrl(stop)} aria-label={`Google 지도로 ${stop.name} 길찾기`}>
-                  G
-                </a>
-                {index > 0 && index < stops.length - 1 && (
-                  <>
-                    <button onClick={() => movePlace(index - 1, -1)} disabled={index === 1} aria-label="앞으로 이동">
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => movePlace(index - 1, 1)}
-                      disabled={index === stops.length - 2}
-                      aria-label="뒤로 이동"
-                    >
-                      ↓
-                    </button>
-                    <button className="remove" onClick={() => removePlace(stop.id)} aria-label={`${stop.name} 삭제`}>
-                      ×
-                    </button>
-                  </>
+              <button type="button" onClick={() => setSearchOpen(true)}>
+                ＋ 장소 추가
+              </button>
+            </header>
+            {stops.map((stop, index) => (
+              <div className="overseas-stop-wrap" key={`${stop.id}-${index}`}>
+                {index > 0 && (
+                  <div className="overseas-leg">
+                    <span>자동차</span>
+                    <strong>
+                      {result?.route.legs[index - 1]
+                        ? `${distance(result.route.legs[index - 1].distanceMeters)} · ${duration(result.route.legs[index - 1].durationSeconds)}`
+                        : "경로 계산 중…"}
+                    </strong>
+                  </div>
                 )}
+                <article>
+                  <i className={index === 0 ? "start" : index === stops.length - 1 ? "goal" : ""}>
+                    {index === 0 ? "S" : index === stops.length - 1 ? "G" : index}
+                  </i>
+                  <div>
+                    <span>{index === 0 ? "출발" : index === stops.length - 1 ? "도착" : "경유지"}</span>
+                    <strong>{stop.name}</strong>
+                    <p>
+                      {stop.category} · {stop.address}
+                    </p>
+                  </div>
+                  <div className="overseas-stop-actions">
+                    <a href={mapsUrl(stop)} aria-label={`Google 지도로 ${stop.name} 길찾기`}>
+                      G
+                    </a>
+                    {index > 0 && index < stops.length - 1 && (
+                      <>
+                        <button
+                          onClick={() => movePlace(index - 1, -1)}
+                          disabled={index === 1}
+                          aria-label="앞으로 이동"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => movePlace(index - 1, 1)}
+                          disabled={index === stops.length - 2}
+                          aria-label="뒤로 이동"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          className="remove"
+                          onClick={() => removePlace(stop.id)}
+                          aria-label={`${stop.name} 삭제`}
+                        >
+                          ×
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
               </div>
-            </article>
-          </div>
-        ))}
-      </section>
-      <p className="overseas-attribution">Google Maps 데이터 사용</p>
-      <nav className="overseas-bottom-nav">
-        <Link className="active" href="/overseas">
+            ))}
+          </section>
+          <p className="overseas-attribution">Google Maps 데이터 사용</p>
+        </>
+      ) : (
+        <section className="overseas-trip-list-page">
+          <header>
+            <div>
+              <span>MY OVERSEAS TRIPS</span>
+              <h2>해외 여행</h2>
+            </div>
+            <button type="button" aria-label="새 해외 여행 추가">
+              ＋
+            </button>
+          </header>
+          <button className="overseas-trip-list-card" type="button" onClick={() => setTab("plan")}>
+            <span>🇺🇸 미국 · 캘리포니아</span>
+            <strong>캘리포니아 해안 드라이브</strong>
+            <small>5월 12일–14일 · 3일 여행</small>
+            <i aria-hidden="true">›</i>
+          </button>
+        </section>
+      )}
+      <nav className="overseas-bottom-nav" aria-label="해외 여행 주요 메뉴">
+        <button className={tab === "plan" ? "active" : ""} type="button" onClick={() => setTab("plan")}>
           <span>⌁</span>일정
-        </Link>
-        <Link href="/overseas">
+        </button>
+        <button className={tab === "trips" ? "active" : ""} type="button" onClick={() => setTab("trips")}>
           <span>✈</span>해외 여행
-        </Link>
+        </button>
         <Link href="/">
           <span>⌂</span>국내 여행
         </Link>
