@@ -129,7 +129,7 @@ export default function GoogleMapTest() {
     }
     const script = document.createElement("script");
     script.id = "google-maps-script";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_BROWSER_KEY)}&language=ko&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_BROWSER_KEY)}&language=ko`;
     script.async = true;
     script.onload = draw;
     script.onerror = () => setError("Google 지도를 불러오지 못했습니다. 브라우저 키의 도메인 제한을 확인해 주세요.");
