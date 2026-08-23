@@ -155,7 +155,7 @@ export default function Home() {
   function openSaveCategoryPicker(place:Place){const recommended=inferSavedCategory(place);setPendingSavePlace(place);setPendingSaveCategories([savedCategories.includes(recommended)?recommended:"기타"])}
   function closeSaveCategoryPicker(){setPendingSavePlace(null);setPendingSaveCategories([])}
   function togglePendingSaveCategory(category:SavedCategory){setPendingSaveCategories((items)=>items.includes(category)?items.filter((item)=>item!==category):[...items,category])}
-  function savePlaceInCategories(place:Place){if(!pendingSaveCategories.length)return;if(!savedPlaces.some((item)=>item.id===place.id))setSavedPlaces((items)=>[{...place,savedCategories:[...new Set(pendingSaveCategories)],savedCategory:undefined},...items]);closeSaveCategoryPicker()}
+  function savePlaceInCategories(place:Place){if(!pendingSaveCategories.length)return;if(!savedPlaces.some((item)=>item.id===place.id))setSavedPlaces((items)=>[{...place,savedCategories:[...new Set(pendingSaveCategories)],savedCategory:undefined},...items]);closeSaveCategoryPicker();setSavedSearchOpen(false);setResults([]);setSearchError("");setQuery("")}
   function editSavedCategory(place:Place){setCategoryPlace(place)}
   function updatePlaceCategories(place:Place,categories:SavedCategory[]){const normalized=[...new Set(categories.length?categories:["기타"])];const updated={...place,savedCategories:normalized,savedCategory:undefined};setSavedPlaces((items)=>items.map((item)=>item.id===place.id?updated:item));setCategoryPlace((current)=>current?.id===place.id?updated:current)}
   function removePlaceCategory(place:Place,category:SavedCategory){updatePlaceCategories(place,placeCategories(place).filter((item)=>item!==category))}
