@@ -155,7 +155,7 @@ export default function Home() {
 
   return <main className="app-shell">
     <header className="app-header"><div><p className="overline">자동차와 도보를 잇는 여행</p><h1>길담</h1></div>{tab==="saved"?<button className="category-manage-button" onClick={manageSavedCategories}>카테고리 관리</button>:<button className="profile" aria-label="프로필">CU</button>}</header>
-    {tab==="plan"&&<section className={`page plan-page ${daySwipeAnimating?"swipe-settling":"swipe-dragging"}`} style={{transform:`translate3d(${daySwipeOffset}px,0,0)`}} onTouchStart={beginDaySwipe} onTouchMove={moveDaySwipe} onTouchEnd={endDaySwipe} onTouchCancel={cancelDaySwipe}>
+    {tab==="plan"&&<section className={`page plan-page ${daySwipeAnimating?"swipe-settling":daySwipeOffset?"swipe-dragging":""}`} style={daySwipeAnimating||daySwipeOffset?{transform:`translate3d(${daySwipeOffset}px,0,0)`}:undefined} onTouchStart={beginDaySwipe} onTouchMove={moveDaySwipe} onTouchEnd={endDaySwipe} onTouchCancel={cancelDaySwipe}>
       {previousDay&&<DaySwipePreview day={previousDay} direction="previous"/>}
       {nextDay&&<DaySwipePreview day={nextDay} direction="next"/>}
       <div className="trip-hero"><div className="hero-top"><span>{days[0]?.date}–{days[days.length-1]?.date} · {days.length}일 여행</span><span className="weather">맑음 27°</span></div><h2>{activeTrip.title}</h2><div className="hero-stats"><span>{activeDay.label}</span><span>경유지 {places.length}곳</span><span>자동 저장</span></div></div>
