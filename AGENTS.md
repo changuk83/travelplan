@@ -30,6 +30,9 @@
 ### 여행과 날짜
 
 - 여러 여행을 여행 탭에서 생성·선택·관리
+- 여행 탭에서는 별도 열기 버튼 없이 여행 카드 전체를 눌러 해당 일정을 엶
+- 여행 카드는 한 화면에 여러 개가 보이도록 컴팩트한 높이와 여백을 사용
+- 여행 이름 수정은 제목 오른쪽의 작고 단순한 단색 연필 아이콘으로 제공
 - 새 여행 생성 시 이름과 선택적인 시작일·종료일 입력
 - 시작일과 종료일이 있으면 해당 기간만큼 날짜별 일정 자동 생성
 - 일수 제한 없음
@@ -37,9 +40,10 @@
   1. 오늘이 여행 기간에 포함된 여행
   2. 가장 가까운 시작 예정 여행
   3. 가장 최근의 마지막 여행
+- 여행 탭에서는 오늘 이후 시작하는 여행 중 시작일이 가장 가까운 여행을 목록 최상단에 표시
 - 날짜 추가·수정·삭제 지원
 - 날짜 삭제 시 확인창 표시
-- 일정 화면이 손가락을 따라 움직이는 좌우 스와이프로 이전 날·다음 날을 전환하며, 후보 카드·지도·날짜 탭·버튼 영역은 제스처 충돌을 피하도록 제외
+- 일정 화면이 손가락을 따라 움직이는 좌우 스와이프로 이전 날·다음 날을 전환하며, 이동할 날짜의 일정 미리보기 페이지가 옆에서 함께 들어옴. 후보 카드·지도·날짜 탭·버튼 영역은 제스처 충돌을 피하도록 제외
 - 전날 목적지를 변경하면 다음 날 출발지도 함께 변경
 
 ### 일정과 경로
@@ -51,11 +55,16 @@
 - 장소별 메모 작성·수정
 - 각 일정 장소에 메인 장소와 복수 후보지 등록
 - 좌우 스와이프와 화살표·페이지 표시로 메인/후보 조회
+- 후보지 슬라이드가 선택되면 일정 변경 없이 지도 마커와 경로가 해당 후보 좌표로 미리보기 전환
 - 후보를 메인으로 변경 가능
 - 네이버 Directions API 결과로 구간별 거리와 예상 시간 표시
+- 각 경유지와 목적지의 구간 정보는 `이전 장소 → 현재 장소` 기준으로 표시하고 출발지에는 표시하지 않음
 - 지도에 `S`, 경유지 번호, `G` 마커와 전체 경로 표시
+- 일정 화면에서 핀 버튼으로 지도를 고정하면 세로 스크롤 중에도 상단에 유지
 - 지도 확대·축소 버튼은 제거된 상태
 - TMAP, 카카오내비, 네이버지도 앱 실행 아이콘 제공
+- `/google-test`에서 기존 국내 일정과 분리된 Google 해외 지도 시험 화면 제공
+- Google Routes와 Places Search Along Route를 조합해 해외 샘플 경로 주변 장소와 경유 거리·시간 조회
 
 ### 내 장소
 
@@ -71,6 +80,7 @@
 ### 모바일 UI
 
 - 일정·여행·내 장소 하단 탭 고정
+- 일정 상단 초록색 요약 영역은 여행 제목만 간결하게 표시
 - iOS 입력 포커스 시 자동 확대를 막기 위해 모바일 입력 폰트 크기 고려
 - 장소 추가 시 화면 최상단 이동 후 검색창 자동 포커스
 - 장소 추가 화면 상단은 노선도 형태로 삽입 위치와 일차를 표시
@@ -94,6 +104,7 @@
 - `GET /health`: 상태 확인
 - `GET /api/places/search?q=...`: 네이버 API HUB 지역 검색 후 결과가 없으면 Geocoding 주소 검색, IP당 분당 30회
 - `POST /api/routes`: 네이버 자동차 경로 계산, IP당 분당 10회
+- `POST /api/google/route-search`: Google 해외 경로와 경로 주변 장소 검색, IP당 분당 10회
 - `GET /api/state`: 사용자 상태 조회, IP당 분당 60회
 - `PUT /api/state`: 사용자 상태 전체 저장, IP당 분당 10회
 - CORS 허용 출처는 `api-worker/wrangler.jsonc`의 `ALLOWED_ORIGINS`에서 관리한다.
@@ -111,6 +122,8 @@ NAVER_MAP_CLIENT_SECRET=
 NAVER_SEARCH_CLIENT_ID=
 NAVER_SEARCH_CLIENT_SECRET=
 NEXT_PUBLIC_KAKAO_JAVASCRIPT_KEY=
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+GOOGLE_MAPS_API_KEY=
 ```
 
 - `NEXT_PUBLIC_*` 값은 브라우저 번들에 노출될 수 있으므로 비밀키를 넣지 않는다.
@@ -118,6 +131,9 @@ NEXT_PUBLIC_KAKAO_JAVASCRIPT_KEY=
 - 카카오내비는 클라이언트 JavaScript SDK를 사용하므로 **JavaScript 키**가 필요하다.
 - 카카오 개발자 콘솔의 JavaScript SDK 도메인에 공개 사이트 원본 주소를 등록해야 한다.
 - 현재 카카오내비 좌표 전달 형식은 `x=경도`, `y=위도`, `coordType="wgs84"`로 올바르다.
+- Google 브라우저 키는 Maps JavaScript API만 허용하고 웹사이트 출처로 제한한다.
+- Google 서버 키는 Routes API와 Places API (New)만 허용하며 Worker secret으로 관리한다.
+- Google Places 콘텐츠는 네이버 지도 위에 표시하지 않고 `/google-test`의 Google 지도에서만 표시한다.
 
 Cloudflare Worker에 필요한 바인딩/비밀값 이름:
 
@@ -126,6 +142,7 @@ NEXT_PUBLIC_NAVER_MAP_CLIENT_ID
 NAVER_MAP_CLIENT_SECRET
 NAVER_SEARCH_CLIENT_ID
 NAVER_SEARCH_CLIENT_SECRET
+GOOGLE_MAPS_API_KEY
 ```
 
 ## 로컬 실행과 확인

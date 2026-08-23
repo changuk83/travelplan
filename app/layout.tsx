@@ -59,6 +59,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <a className="google-test-shortcut" href="/google-test" aria-label="Google 해외 지도 테스트 열기">해외 지도 <span aria-hidden="true">G</span></a>
       </body>
     </html>
   );

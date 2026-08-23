@@ -9,6 +9,7 @@ type Env = {
   NAVER_MAP_CLIENT_SECRET: string;
   NAVER_SEARCH_CLIENT_ID: string;
   NAVER_SEARCH_CLIENT_SECRET: string;
+  GOOGLE_MAPS_API_KEY: string;
 };
 
 type RateLimiter = {
@@ -85,6 +86,19 @@ async function search(request: Request, env: Env) {
   return json({source:"geocoding",places:(geocodeData.addresses??[]).map((item:any,index:number)=>({id:`address-${index}-${item.x}`,name:item.roadAddress||item.jibunAddress||q,category:"주소",address:item.jibunAddress||item.roadAddress||"",longitude:Number(item.x),latitude:Number(item.y),link:""}))});
 }
 
+async function googleRouteSearch(request:Request,env:Env){
+  if(!env.GOOGLE_MAPS_API_KEY)return json({error:"Google 서버 API 키가 아직 설정되지 않았습니다."},{status:503});
+  const {query,start,goal}=await request.json() as {query?:string;start?:{latitude:number;longitude:number};goal?:{latitude:number;longitude:number}};
+  if(!query?.trim()||!start||!goal)return json({error:"검색어와 출발·도착 좌표가 필요합니다."},{status:400});
+  const routeResponse=await fetch("https://routes.googleapis.com/directions/v2:computeRoutes",{method:"POST",headers:{"content-type":"application/json","X-Goog-Api-Key":env.GOOGLE_MAPS_API_KEY,"X-Goog-FieldMask":"routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline"},body:JSON.stringify({origin:{location:{latLng:start}},destination:{location:{latLng:goal}},travelMode:"DRIVE",routingPreference:"TRAFFIC_AWARE"})});
+  const routeData=await routeResponse.json() as any;if(!routeResponse.ok)return json({error:routeData.error?.message||"Google 경로를 계산하지 못했습니다."},{status:routeResponse.status});
+  const route=routeData.routes?.[0];const encodedPolyline=route?.polyline?.encodedPolyline;if(!encodedPolyline)return json({error:"Google 경로 결과가 없습니다."},{status:404});
+  const placesResponse=await fetch("https://places.googleapis.com/v1/places:searchText",{method:"POST",headers:{"content-type":"application/json","X-Goog-Api-Key":env.GOOGLE_MAPS_API_KEY,"X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.location,places.primaryTypeDisplayName,routingSummaries"},body:JSON.stringify({textQuery:query.trim(),languageCode:"ko",maxResultCount:10,searchAlongRouteParameters:{polyline:{encodedPolyline}},routingParameters:{origin:start}})});
+  const placesData=await placesResponse.json() as any;if(!placesResponse.ok)return json({error:placesData.error?.message||"Google 장소를 검색하지 못했습니다."},{status:placesResponse.status});
+  const parseSeconds=(value?:string)=>Number(value?.replace("s","")??0);const places=(placesData.places??[]).map((place:any,index:number)=>{const legs=placesData.routingSummaries?.[index]?.legs??[];return{id:place.id,name:place.displayName?.text??"이름 없는 장소",address:place.formattedAddress??"",category:place.primaryTypeDisplayName?.text??"장소",location:place.location,detourDistanceMeters:Math.max(0,legs.reduce((sum:number,leg:any)=>sum+(leg.distanceMeters??0),0)-(route.distanceMeters??0)),detourDurationSeconds:Math.max(0,legs.reduce((sum:number,leg:any)=>sum+parseSeconds(leg.duration),0)-parseSeconds(route.duration))}});
+  return json({encodedPolyline,route:{distanceMeters:route.distanceMeters??0,durationSeconds:parseSeconds(route.duration)},places});
+}
+
 async function getState(deviceId:string, env:Env) {
   void deviceId;
   const userId=DEFAULT_USER_ID;
@@ -120,4 +134,4 @@ async function putState(deviceId:string, request:Request, env:Env) {
   await env.DB.batch(statements);return json({ok:true,updatedAt:now});
 }
 
-export default {async fetch(request:Request,env:Env){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await directions(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=(await enforceRateLimit(request,env.SEARCH_RATE_LIMITER))??await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));const limiter=request.method==="GET"?env.STATE_READ_RATE_LIMITER:request.method==="PUT"?env.STATE_WRITE_RATE_LIMITER:null;const blocked=limiter?await enforceRateLimit(request,limiter):null;response=blocked??(!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405}));}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
+export default {async fetch(request:Request,env:Env){const headers=cors(request,env);if(request.method==="OPTIONS")return new Response(null,{status:204,headers});try{const url=new URL(request.url);let response:Response;if(url.pathname==="/health")response=json({ok:true});else if(url.pathname==="/api/routes"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await directions(request,env);else if(url.pathname==="/api/google/route-search"&&request.method==="POST")response=(await enforceRateLimit(request,env.ROUTE_RATE_LIMITER))??await googleRouteSearch(request,env);else if(url.pathname==="/api/places/search"&&request.method==="GET")response=(await enforceRateLimit(request,env.SEARCH_RATE_LIMITER))??await search(request,env);else if(url.pathname==="/api/state"){const deviceId=validDevice(request.headers.get("x-gildam-device"));const limiter=request.method==="GET"?env.STATE_READ_RATE_LIMITER:request.method==="PUT"?env.STATE_WRITE_RATE_LIMITER:null;const blocked=limiter?await enforceRateLimit(request,limiter):null;response=blocked??(!deviceId?json({error:"기기 식별자가 필요합니다."},{status:400}):request.method==="GET"?await getState(deviceId,env):request.method==="PUT"?await putState(deviceId,request,env):json({error:"지원하지 않는 요청입니다."},{status:405}));}else response=json({error:"찾을 수 없습니다."},{status:404});const next=new Headers(response.headers);for(const [k,v] of Object.entries(headers))next.set(k,v);return new Response(response.body,{status:response.status,headers:next});}catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:"서버 오류가 발생했습니다."}),{status:500,headers:{"content-type":"application/json",...headers}})}}};
