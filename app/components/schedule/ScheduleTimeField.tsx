@@ -7,11 +7,13 @@ export default function ScheduleTimeField({
   value,
   onChange,
   disabled = false,
+  compact = false,
 }: {
   label?: string;
   value: string;
   onChange: (time: string) => void;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -56,7 +58,7 @@ export default function ScheduleTimeField({
             <circle cx="12" cy="12" r="8.5" />
             <path d="M12 7v5l3 2" />
           </svg>
-          <span>{display}</span>
+          <span>{compact ? value || "시간 +" : display}</span>
           {!value && (
             <span aria-hidden="true" className="schedule-time-plus">
               +

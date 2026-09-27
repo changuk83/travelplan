@@ -1,9 +1,9 @@
 import type { DayPlan, TripPlan } from "../../domain/types";
+import { compactDateLabel } from "../../domain/date";
 
 export default function TripHeader({
   trip,
   days,
-  activeDay,
   syncLabel = "자동 저장",
 }: {
   trip: TripPlan;
@@ -13,17 +13,18 @@ export default function TripHeader({
 }) {
   return (
     <div className="trip-hero">
+      <h2>{trip.title}</h2>
       <div className="hero-top">
         <span>
-          {days[0]?.date}–{days[days.length - 1]?.date} · {days.length}일 여행
+          {compactDateLabel(days[0]?.date ?? "")} – {compactDateLabel(days[days.length - 1]?.date ?? "")} ·{" "}
+          {days.length}일
         </span>
       </div>
-      <h2>{trip.title}</h2>
-      <div className="hero-stats">
-        <span>{activeDay.label}</span>
-        <span>경유지 {activeDay.places.length}곳</span>
-        <span>{syncLabel}</span>
-      </div>
+      {syncLabel !== "자동 저장" && syncLabel !== "기기에 자동 저장" && (
+        <div className="hero-sync-status" role="status">
+          {syncLabel}
+        </div>
+      )}
     </div>
   );
 }

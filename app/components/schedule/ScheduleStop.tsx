@@ -6,7 +6,6 @@ import type { RouteLeg } from "../../NaverMap";
 import type { Place } from "../../domain/types";
 import NavigationLinks from "../navigation/NavigationLinks";
 import ScheduleTimeField from "./ScheduleTimeField";
-import LegSummary from "./LegSummary";
 
 type Props = {
   place: Place;
@@ -32,7 +31,6 @@ export default function ScheduleStop({
   scheduledTime,
   onTimeChange,
   index,
-  leg,
   alternatives,
   dragging,
   onBeginDrag,
@@ -61,6 +59,9 @@ export default function ScheduleStop({
       data-order-index={index}
       className={`timeline-item user-stop candidate-stop ${dragging ? "dragging" : ""}`}
     >
+      <div className="schedule-time-rail">
+        <ScheduleTimeField compact label="방문 예정 시간" value={scheduledTime} onChange={onTimeChange} />
+      </div>
       <button
         className="drag-handle"
         onPointerDown={(event) => onBeginDrag(index, event)}
@@ -114,8 +115,6 @@ export default function ScheduleStop({
               {place.category} · {place.address}
             </p>
             {place.memo && <p className="place-memo">메모 · {place.memo}</p>}
-            <ScheduleTimeField label="방문 예정 시간" value={scheduledTime} onChange={onTimeChange} />
-            <LegSummary leg={leg} />
             <div className="stop-actions">
               <button
                 className={`place-memo-icon schedule-memo-icon ${place.memo ? "has-memo" : ""}`}
@@ -176,7 +175,7 @@ export default function ScheduleStop({
           ))}
         </div>
         {alternatives.length > 0 && (
-          <>
+          <div className="candidate-controls" role="group" aria-label="메인·후보 장소 전환">
             <button
               className="candidate-arrow previous"
               onClick={() => goToSlide(activeSlide - 1)}
@@ -203,7 +202,7 @@ export default function ScheduleStop({
                 />
               ))}
             </div>
-          </>
+          </div>
         )}
       </div>
     </article>

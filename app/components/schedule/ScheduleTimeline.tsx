@@ -47,9 +47,17 @@ export default function ScheduleTimeline({
 }: Props) {
   const places = day.places;
   return (
-    <div className={`timeline sortable ${dragIndex !== null ? "is-sorting" : ""}`}>
+    <div className={`timeline sortable calm-timeline ${dragIndex !== null ? "is-sorting" : ""}`}>
       <article className="timeline-item fixed-stop">
-        <time>출발</time>
+        <div className="schedule-time-rail">
+          <span className="endpoint-label">출발</span>
+          <ScheduleTimeField
+            compact
+            label="출발 시간"
+            value={day.scheduleTimes?.start ?? ""}
+            onChange={(time) => onTimeChange("start", time)}
+          />
+        </div>
         <div className="stop-dot">S</div>
         <div className="stop-content">
           <div className="stop-title-row">
@@ -58,11 +66,6 @@ export default function ScheduleTimeline({
             </h3>
           </div>
           <p>{day.label} 출발지예요</p>
-          <ScheduleTimeField
-            label="출발 시간"
-            value={day.scheduleTimes?.start ?? ""}
-            onChange={(time) => onTimeChange("start", time)}
-          />
           <div className="stop-actions">
             <button className="add-place" onClick={() => onChooseEndpoint("start")}>
               출발지 변경
@@ -74,6 +77,9 @@ export default function ScheduleTimeline({
       <TimelineInsertion index={0} disabled={places.length >= 30} onAdd={onChooseInsertion} />
       {places.map((place, index) => (
         <Fragment key={place.id}>
+          <div className="timeline-leg">
+            <LegSummary leg={legs[index]} />
+          </div>
           <ScheduleStop
             place={place}
             scheduledTime={day.scheduleTimes?.[`place:${place.id}`] ?? ""}
@@ -95,8 +101,21 @@ export default function ScheduleTimeline({
           <TimelineInsertion index={index + 1} disabled={places.length >= 30} onAdd={onChooseInsertion} />
         </Fragment>
       ))}
+      {day.goal.name !== "목적지 미정" && (
+        <div className="timeline-leg">
+          <LegSummary leg={legs[places.length]} />
+        </div>
+      )}
       <article className="timeline-item fixed-stop">
-        <time>도착</time>
+        <div className="schedule-time-rail">
+          <span className="endpoint-label">도착</span>
+          <ScheduleTimeField
+            compact
+            label="도착 시간"
+            value={day.scheduleTimes?.goal ?? ""}
+            onChange={(time) => onTimeChange("goal", time)}
+          />
+        </div>
         <div className="stop-dot">G</div>
         <div className="stop-content">
           <div className="stop-title-row">
@@ -105,12 +124,6 @@ export default function ScheduleTimeline({
             </h3>
           </div>
           <p>{day.goal.name === "목적지 미정" ? "검색해서 목적지를 정해 주세요." : `${day.label} 최종 목적지예요`}</p>
-          <ScheduleTimeField
-            label="도착 시간"
-            value={day.scheduleTimes?.goal ?? ""}
-            onChange={(time) => onTimeChange("goal", time)}
-          />
-          {day.goal.name !== "목적지 미정" && <LegSummary leg={legs[places.length]} />}
           <div className="stop-actions">
             <button className="add-place" onClick={() => onChooseEndpoint("goal")}>
               목적지 변경

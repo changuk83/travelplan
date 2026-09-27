@@ -309,8 +309,21 @@ const answerFormat = {
     properties: {
       message: { type: "string" },
       recommendationIds: { type: "array", items: { type: "string" } },
+      placeDetails: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            recommendationId: { type: "string" },
+            description: { type: "string" },
+            reason: { type: "string" },
+          },
+          required: ["recommendationId", "description", "reason"],
+        },
+      },
     },
-    required: ["message", "recommendationIds"],
+    required: ["message", "recommendationIds", "placeDetails"],
   },
 };
 
@@ -327,7 +340,14 @@ const instructions = `당신은 길담 국내 자동차 여행 도우미다. 한
 여행 목록은 list_trips, 일정은 get_day_schedule로 조회한다. 셋째날 등은 실제 days 순서의 dayId를 사용한다. 변경 요청 전에 get_day_schedule로 확인하고 placeId로 정확하게 대상을 선택한다. 마지막 장소 삭제는 마지막 중간 경유지를 뜻하며 출발지/목적지를 삭제할 수 없다.
 등록/삭제/이동/후보 등록 도구는 확인 카드만 준비한다. 절대 저장/삭제/변경 완료했다고 말하지 말고 화면에서 확인해 달라고 안내한다. 요청당 한 가지 변경만 준비한다. 모호한 삭제 대상은 질문한다. 사용자 지시 없는 변경은 준비하지 않는다.
 장소 추가에는 실제 검색 결과의 placeId 또는 availablePlaces에 제공된 ID만 사용한다. 이전 추천 목록의 순서가 유지되므로 '두번째 식당'은 그 목록의 두번째 장소를 뜻한다. 이름이나 좌표를 임의로 만들지 않는다. 일정 도구로 현재 장소를 조회할 때는 새 검색이 필요하지 않다.
-추천 근거는 검색된 카테고리, 주소, 경로 근접성만 사용한다. 사용자 취향/메뉴 조건은 검색어에 반영하되 맛집이나 메뉴 제공을 보증하지 않는다.`;
+선택한 각 recommendationId에 대해 placeDetails에 description(어떤 곳인지 1~2문장), reason(요청과 일정에 맞는 추천 이유 1문장)을 작성한다. 추천이 없으면 placeDetails는 빈 배열이다. 각 설명은 300자 이하로 쓴다.
+추천 근거는 도구의 카테고리, 주소, 경로 근접성, userMemo만 사용한다. userMemo는 검증된 업체 정보가 아니라 사용자가 남긴 메모이므로 반드시 '저장한 메모에 따르면'으로 출처를 밝힌다. 장소명이나 모델의 사전 지식만으로 유명한 이유, 대표 메뉴, 평점, 맛, 분위기, 영업시간을 추측하지 않는다. 특징의 근거가 없으면 업종 소개만 하고 대표 메뉴·특징은 추가 확인이 필요하다고 짧게 안내한다. 사용자 취향/메뉴 조건은 검색어에 반영하되 맛집이나 메뉴 제공을 보증하지 않는다. 휴게소 진입방향 미검증 안내는 추천 이유에도 유지한다.`;
+
+function placeDescription(place: Place): string {
+  return place.category
+    ? `검색 정보에 ‘${place.category}’로 분류된 장소예요. 대표 메뉴나 자세한 특징은 방문 전에 확인해 주세요.`
+    : "검색으로 확인한 장소예요. 자세한 특징은 장소 정보를 확인해 주세요.";
+}
 
 export async function handleAiChat(request: Request, env: AiEnv, deps: AiDependencies): Promise<Response> {
   const reply = (body: unknown, status = 200) =>
@@ -407,6 +427,7 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
       dayId: day.id,
       insertIndex,
       reason,
+      description: placeDescription(place),
       distanceLabel,
       distanceMeters: distance === undefined ? undefined : Math.round(distance),
     });
@@ -417,6 +438,7 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
       name: place.name,
       address: place.address,
       category: place.category,
+      userMemo: place.memo?.slice(0, 1000) || null,
       dayId: day.id,
       insertIndex,
       reason,
@@ -619,7 +641,15 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
       const distanceMeters = Math.round(distance);
       const distanceLabel = `경로에서 직선 ${distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)}km` : `${distanceMeters}m`}`;
       const reason = `${distanceLabel} · ${/휴게소/.test(args.query as string) ? "진행 방향·진입 가능 여부 확인 필요" : "실제 이동시간·영업정보 확인 필요"}`;
-      recommendations.set(id, { place, dayId: day.id, insertIndex, reason, distanceMeters, distanceLabel });
+      recommendations.set(id, {
+        place,
+        dayId: day.id,
+        insertIndex,
+        reason,
+        description: placeDescription(place),
+        distanceMeters,
+        distanceLabel,
+      });
       knownPlaces.set(place.id, place);
       return {
         id,
@@ -627,6 +657,7 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
         name: place.name,
         address: place.address,
         category: place.category,
+        userMemo: place.memo?.slice(0, 1000) || null,
         dayId: day.id,
         insertIndex,
         reason,
@@ -682,7 +713,7 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
           tools,
           tool_choice: round === 5 || repairedSelection ? "none" : "auto",
           parallel_tool_calls: false,
-          max_output_tokens: 1800,
+          max_output_tokens: 3000,
           text: { format: answerFormat },
         }),
       });
@@ -732,10 +763,28 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
       const answer: unknown = JSON.parse(text);
       if (!isObject(answer) || !isText(answer.message, 4000) || !Array.isArray(answer.recommendationIds))
         throw new Error("invalid_answer");
-      let selected = [...new Set(answer.recommendationIds.filter((id): id is string => typeof id === "string"))]
+      let selected: AiRecommendation[] = [
+        ...new Set(answer.recommendationIds.filter((id): id is string => typeof id === "string")),
+      ]
         .flatMap((id) => {
           const value = recommendations.get(id);
-          return value ? [value] : [];
+          if (!value) return [];
+          const detail = Array.isArray(answer.placeDetails)
+            ? answer.placeDetails.find((item: unknown) => isObject(item) && item.recommendationId === id)
+            : undefined;
+          return [
+            {
+              ...value,
+              description:
+                isObject(detail) && isText(detail.description, 300) && detail.description.trim()
+                  ? detail.description.trim()
+                  : value.description,
+              reason:
+                isObject(detail) && isText(detail.reason, 300) && detail.reason.trim()
+                  ? detail.reason.trim()
+                  : value.reason,
+            },
+          ];
         })
         .slice(0, 6);
       let message = answer.message;

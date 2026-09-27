@@ -3582,7 +3582,72 @@ body:has(.google-test-shell) .google-test-shortcut {
   font-weight: 500;
 }
 .place-picker .place-search {
-  padding-bottom: 8px;
+  padding: 5px;
+  min-height: 54px;
+  border: 1px solid #c6d9cc;
+  box-shadow: none;
+}
+.place-picker .place-search:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px #16885414;
+}
+.place-picker .place-search input {
+  font-size: 16px;
+}
+.place-picker .place-search > button {
+  min-height: 44px;
+  font-size: 14px;
+}
+.place-picker-heading-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+.place-picker-heading-actions button {
+  width: 44px;
+  display: grid;
+  place-items: center;
+}
+.place-picker .place-picker-route {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+.place-picker-route b {
+  font-size: 11px;
+}
+.place-picker .rest-panel {
+  margin-top: 0;
+  padding-top: 12px;
+  border-radius: 0;
+  box-shadow: none;
+}
+.place-picker-selection {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.place-picker-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.place-picker-confirm-actions button:first-child {
+  background: #edf2ee;
+  color: #526459;
+}
+.place-picker .rest-card {
+  flex-wrap: wrap;
+}
+.place-picker .rest-card .rest-copy {
+  min-width: 0;
+}
+.place-picker .rest-card .place-picker-selection:has(.schedule-time-field),
+.place-picker .search-result-actions:has(.schedule-time-field) {
+  flex-basis: 100%;
+}
+.place-picker .search-results article:has(.schedule-time-field) {
+  flex-wrap: wrap;
+}
+.place-picker .schedule-time-editor {
+  max-width: 100%;
 }
 .app-header {
   min-height: 64px;
@@ -3700,4 +3765,371 @@ body:has(.google-test-shell) .google-test-shortcut {
   .recently-added {
     scroll-behavior: auto;
   }
+}
+
+/* Calm travel planner: preserve the brand typography and existing interactions. */
+.trip-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 16px 12px;
+}
+.trip-overview .trip-hero {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #233a30;
+}
+.plan-page .trip-overview .trip-hero h2 {
+  margin: 0 0 5px;
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+.trip-overview .hero-top {
+  font-size: 12px;
+}
+.trip-overview .map-pin-row {
+  height: auto;
+  margin: 0;
+  gap: 6px;
+  align-items: center;
+}
+.trip-overview .map-pin-row button,
+.trip-overview .preview-actions > span {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid #e0e7e2;
+  border-radius: 10px;
+  background: #fff;
+  color: #38614b;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.map-pinned .day-swipe-preview > .trip-overview {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+.trip-overview .map-pin-row button i {
+  background: transparent;
+}
+.hero-sync-status {
+  margin-top: 4px;
+  color: #8a7551;
+  font-size: 11px;
+}
+.map-pinned .plan-page > .trip-overview {
+  flex: 0 0 auto;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+.map-pinned .trip-overview .trip-hero {
+  display: none;
+}
+.map-pinned .trip-overview {
+  grid-template-columns: 1fr;
+}
+@media (max-width: 360px) {
+  .trip-overview {
+    gap: 6px;
+  }
+  .trip-overview .map-pin-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .trip-overview .map-pin-row button {
+    min-height: 30px;
+    justify-content: center;
+  }
+}
+.plan-page > .trip-hero,
+.swipe-preview-hero {
+  background: transparent;
+  color: #233a30;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 10px 4px;
+}
+.plan-page .trip-hero h2 {
+  color: #20372c;
+  font-size: 24px;
+  letter-spacing: -0.7px;
+}
+.plan-page .hero-top {
+  color: #7b8880;
+  font-size: 11px;
+}
+.plan-page .hero-stats span,
+.swipe-preview-stats span {
+  background: #edf2ed;
+  color: #60766a;
+}
+.plan-page .plan-map {
+  box-shadow: none;
+  border-color: #dfe7e0;
+  border-radius: 18px;
+}
+.plan-page .section-heading {
+  margin-top: 22px;
+}
+.plan-page .section-heading p {
+  color: #89948d;
+  line-height: 1.6;
+}
+.calm-timeline {
+  position: relative;
+  padding: 8px 16px 24px;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.calm-timeline .timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px 20px minmax(0, 1fr);
+  gap: 0;
+  min-height: 0 !important;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  align-items: start;
+}
+.calm-timeline .schedule-time-rail {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  padding-top: 12px;
+  position: relative;
+  z-index: 4;
+}
+.calm-timeline .endpoint-label {
+  display: block;
+  color: #809187;
+  font-size: 10px;
+}
+.calm-timeline .schedule-time-summary {
+  flex-wrap: wrap;
+  gap: 0;
+}
+.calm-timeline .schedule-time-chip {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #253c30;
+  font-weight: 700;
+  min-height: 32px;
+}
+.calm-timeline .schedule-time-chip svg,
+.calm-timeline .schedule-time-plus {
+  display: none;
+}
+.calm-timeline .schedule-time-editor {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: min(275px, calc(100vw - 40px));
+  max-width: none;
+  z-index: 10;
+  background: white;
+  box-shadow: 0 8px 24px #16362326;
+}
+.calm-timeline .stop-dot {
+  grid-column: 2;
+  grid-row: 1;
+  margin-top: 20px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #357254;
+  background: #fff;
+  color: transparent;
+  font-size: 0;
+  position: relative;
+  z-index: 1;
+}
+.calm-timeline .stop-dot:after {
+  display: none;
+}
+.calm-timeline .timeline-item:before {
+  content: "";
+  position: absolute;
+  left: 57px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #dce4dd;
+}
+.calm-timeline .stop-content,
+.calm-timeline .candidate-carousel {
+  grid-column: 3;
+  grid-row: 1;
+}
+.calm-timeline .stop-content,
+.calm-timeline .candidate-slide {
+  background: #fff;
+  border: 1px solid #e7ece8;
+  border-radius: 12px;
+  padding: 14px 12px 10px;
+  box-shadow: 0 3px 12px #173b2805;
+}
+.calm-timeline .candidate-slide.alternative {
+  background: #f9fbf8;
+}
+.calm-timeline .candidate-carousel {
+  padding-bottom: 0;
+}
+.calm-timeline .candidate-track.has-alternatives {
+  margin: 0;
+  padding: 0 12px 0 0;
+  scroll-padding-inline: 0;
+}
+.calm-timeline .candidate-track.has-alternatives .candidate-slide {
+  flex-basis: 100%;
+}
+.calm-timeline .drag-handle {
+  position: absolute;
+  left: 5px;
+  top: 74px;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  color: #a8b4ac;
+  font-size: 18px;
+}
+.calm-timeline h3 {
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 700;
+  letter-spacing: -0.35px;
+}
+.calm-timeline .place-name-link {
+  text-decoration: none;
+}
+.calm-timeline .place-name-link:hover {
+  text-decoration: underline;
+}
+.calm-timeline p {
+  color: #88938c;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.calm-timeline .candidate-kind {
+  font-weight: 500;
+  color: #84978b;
+  font-size: 10px;
+  margin-bottom: 5px;
+}
+.calm-timeline .place-memo {
+  color: #6b7057;
+  background: #fbf7e9;
+  border: 0;
+  padding: 9px 10px;
+  margin: 10px 0 4px;
+  border-radius: 7px;
+  white-space: pre-wrap;
+}
+.calm-timeline .stop-actions {
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.calm-timeline .navigation-links {
+  gap: 0;
+}
+.calm-timeline .nav-app-icon {
+  box-shadow: none;
+}
+.calm-timeline .place-memo-icon.has-memo {
+  background: #f6f2df !important;
+  color: #8b8050 !important;
+  border-radius: 10px !important;
+}
+.calm-timeline .schedule-remove {
+  background: transparent;
+  border-color: transparent;
+  color: #98a59c;
+}
+.calm-timeline .candidate-arrow {
+  position: static;
+  width: 36px;
+  height: 36px;
+  background: #ffffffed;
+  border-color: #e2e9e3 !important;
+  box-shadow: none;
+}
+.calm-timeline .candidate-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 5px 0;
+}
+.calm-timeline .candidate-controls .candidate-dots {
+  position: static;
+  transform: none;
+  order: 1;
+  max-width: calc(100% - 96px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.calm-timeline .candidate-controls .previous {
+  order: 0;
+  flex-shrink: 0;
+}
+.calm-timeline .candidate-controls .next {
+  order: 2;
+  flex-shrink: 0;
+}
+.calm-timeline .timeline-insertion {
+  grid-template-columns: 52px 20px minmax(0, 1fr);
+  min-height: 38px;
+}
+.calm-timeline .timeline-insertion:before {
+  left: 57px;
+  border-left: 1px solid #dce4dd;
+}
+.calm-timeline .timeline-insertion button {
+  grid-column: 3;
+  justify-self: start;
+  color: #688775;
+}
+.calm-timeline .timeline-insertion button span {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.calm-timeline .timeline-leg {
+  position: relative;
+  padding: 2px 0 16px 72px;
+}
+.calm-timeline .timeline-leg:before {
+  content: "";
+  position: absolute;
+  left: 57px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #dce4dd;
+}
+.calm-timeline .leg-summary {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #829188;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+.map-pinned .calm-timeline {
+  padding-top: 12px;
 }

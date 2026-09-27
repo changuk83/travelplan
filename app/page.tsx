@@ -841,35 +841,38 @@ export default function Home() {
               tripRange={`${days[0]?.date}–${days[days.length - 1]?.date} · ${days.length}일 여행`}
             />
           )}
-          <TripHeader
-            trip={activeTrip}
-            days={days}
-            activeDay={activeDay}
-            syncLabel={
-              cloudSync.syncError
-                ? "기기에 보관 중"
-                : cloudSync.syncStatus === "saving"
-                  ? "서버 저장 중"
-                  : cloudSync.syncStatus === "loading"
-                    ? "불러오는 중"
-                    : API_BASE
-                      ? "자동 저장"
-                      : "기기에 자동 저장"
-            }
-          />
-          <div className="map-pin-row">
-            <button type="button" className="ai-assistant-launch" onClick={() => setAssistantOpen(true)}>
-              AI에게 부탁하기
-            </button>
-            <button
-              type="button"
-              className={mapPinned ? "active" : ""}
-              aria-pressed={mapPinned}
-              onClick={() => setMapPinned((value) => !value)}
-            >
-              <i aria-hidden="true">⌖</i>
-              {mapPinned ? "지도 고정 해제" : "스크롤할 때 지도 고정"}
-            </button>
+          <div className="trip-overview">
+            <TripHeader
+              trip={activeTrip}
+              days={days}
+              activeDay={activeDay}
+              syncLabel={
+                cloudSync.syncError
+                  ? "기기에 보관 중"
+                  : cloudSync.syncStatus === "saving"
+                    ? "서버 저장 중"
+                    : cloudSync.syncStatus === "loading"
+                      ? "불러오는 중"
+                      : API_BASE
+                        ? "자동 저장"
+                        : "기기에 자동 저장"
+              }
+            />
+            <div className="map-pin-row">
+              <button type="button" className="ai-assistant-launch" onClick={() => setAssistantOpen(true)}>
+                <span aria-hidden="true">✦</span> AI 추천
+              </button>
+              <button
+                type="button"
+                className={mapPinned ? "active" : ""}
+                aria-pressed={mapPinned}
+                aria-label={mapPinned ? "지도 고정 해제" : "스크롤할 때 지도 고정"}
+                onClick={() => setMapPinned((value) => !value)}
+              >
+                <i aria-hidden="true">⌖</i>
+                {mapPinned ? "고정 해제" : "지도 고정"}
+              </button>
+            </div>
           </div>
           <div className={`plan-map ${mapPinned ? "pinned" : ""}`}>
             <DaySwitcher
@@ -962,7 +965,6 @@ export default function Home() {
             setInsertIndex(null);
             setTab("plan");
           }}
-          onScrollToSaved={() => savedPlacesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
           onToggleSaved={toggleSaved}
           onSelectPlace={(place, time) =>
             endpointTarget ? setEndpoint(place, time) : candidateFor ? addCandidate(place) : addPlace(place, time)

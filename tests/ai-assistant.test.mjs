@@ -230,6 +230,8 @@ for (const fixOnRetry of [false, true]) {
     assert.equal(searches, 1);
     assert.equal(body.recommendations.length, 1);
     assert.equal(body.recommendations[0].place.id, place.id);
+    assert.match(body.recommendations[0].description, /음식점/);
+    assert.match(body.recommendations[0].description, /확인/);
     if (!fixOnRetry) assert.match(body.message, /후보 장소/);
   });
 }
@@ -446,6 +448,14 @@ test("tool calling grounds third-day cards in real search output and drops fabri
                     text: JSON.stringify({
                       message: "셋째 날 동선 주변 장소예요.",
                       recommendationIds: ["fake-place", "recommendation-1", "recommendation-1"],
+                      placeDetails: [
+                        { recommendationId: "fake-place", description: "없는 장소", reason: "잘못된 추천" },
+                        {
+                          recommendationId: "recommendation-1",
+                          description: "부산에 있는 음식점이에요.",
+                          reason: "셋째 날 경로 주변에서 찾은 식사 후보예요.",
+                        },
+                      ],
                     }),
                   },
                 ],
@@ -477,6 +487,8 @@ test("tool calling grounds third-day cards in real search output and drops fabri
   assert.equal(routed.scope.dayId, "day-3");
   assert.equal(result.recommendations.length, 1);
   assert.equal(result.recommendations[0].dayId, "day-3");
+  assert.equal(result.recommendations[0].description, "부산에 있는 음식점이에요.");
+  assert.equal(result.recommendations[0].reason, "셋째 날 경로 주변에서 찾은 식사 후보예요.");
   assert.deepEqual(result.recommendations[0].place, place);
   assert.match(result.recommendations[0].distanceLabel, /직선/);
   assert.ok(searches > 0 && searches <= 6);

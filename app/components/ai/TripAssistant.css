@@ -193,6 +193,23 @@
   color: #467256;
   font-size: 0.8rem;
 }
+.trip-ai-place-details {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin: 12px 0;
+  background: #f3f7f3;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.trip-ai-place-details h4 {
+  margin: 0;
+  color: #467256;
+  font-size: 0.75rem;
+}
+.trip-ai-place-details p {
+  margin: 4px 0 0;
+}
 .trip-ai-card-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

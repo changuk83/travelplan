@@ -6,6 +6,7 @@ export type AiMessage = { role: "user" | "assistant"; content: string };
 export type AiRecommendation = {
   place: Place;
   reason: string;
+  description?: string;
   dayId: string;
   insertIndex: number;
   scheduledTime?: string;

@@ -100,7 +100,18 @@ function RecommendationCard({
         <PlaceNameLink place={place} />
       </h3>
       <p className="trip-ai-address">{place.address}</p>
-      <p>{recommendation.reason}</p>
+      <div className="trip-ai-place-details">
+        {recommendation.description && (
+          <section>
+            <h4>어떤 곳인가요</h4>
+            <p>{recommendation.description}</p>
+          </section>
+        )}
+        <section>
+          <h4>추천 이유</h4>
+          <p>{recommendation.reason}</p>
+        </section>
+      </div>
       {recommendation.distanceLabel && <p className="trip-ai-distance">{recommendation.distanceLabel}</p>}
       <ScheduleTimeField value={scheduledTime} onChange={setScheduledTime} disabled={pending || added} />
       <div className="trip-ai-card-fields">

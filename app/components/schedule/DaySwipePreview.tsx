@@ -15,19 +15,17 @@ export default function DaySwipePreview({
   const stops = [day.start, ...day.places, day.goal];
   return (
     <div className={`day-swipe-preview ${direction}`} aria-hidden="true">
-      <div className="swipe-preview-hero">
-        <div className="swipe-preview-hero-top">
-          <span>{tripRange}</span>
+      <div className="trip-overview">
+        <div className="trip-hero">
+          <h2>{tripTitle}</h2>
+          <div className="hero-top">
+            <span>{tripRange.replace(/(\d+)월\s*(\d+)일/g, "$1/$2").replace(" 여행", "")}</span>
+          </div>
         </div>
-        <strong>{tripTitle}</strong>
-        <div className="swipe-preview-stats">
-          <span>{day.label}</span>
-          <span>경유지 {day.places.length}곳</span>
-          <span>자동 저장</span>
+        <div className="map-pin-row preview-actions">
+          <span>✦ AI 추천</span>
+          <span>지도 고정</span>
         </div>
-      </div>
-      <div className="swipe-preview-pin-row">
-        <span>스크롤할 때 지도 고정</span>
       </div>
       <div className="swipe-preview-map">
         <div className="swipe-preview-days">

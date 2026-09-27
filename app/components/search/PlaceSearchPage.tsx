@@ -38,7 +38,6 @@ export default function PlaceSearchPage({
   onSearch,
   onDismissResults,
   onCancelSelection,
-  onScrollToSaved,
   onToggleSaved,
   onSelectPlace,
   onSavedCategoryChange,
@@ -70,13 +69,13 @@ export default function PlaceSearchPage({
   onSearch: (event: FormEvent) => void;
   onDismissResults: () => void;
   onCancelSelection: () => void;
-  onScrollToSaved: () => void;
   onToggleSaved: (place: Place) => void;
   onSelectPlace: (place: Place, scheduledTime?: string) => void;
   onSavedCategoryChange: (category: CategoryFilter) => void;
   onOpenSavedPlaces: () => void;
 }) {
   const [scheduledTime, setScheduledTime] = useState("");
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const searchFormRef = useRef<HTMLFormElement>(null);
   const searchResultsRef = useRef<HTMLDivElement>(null);
@@ -108,6 +107,47 @@ export default function PlaceSearchPage({
   const selectionDisabled = (place: Place) =>
     !endpointTarget && !candidateFor && places.some((item) => item.id === place.id);
 
+  const selectControl = (place: Place) => (
+    <div className="place-picker-selection">
+      {selectedPlaceId === place.id ? (
+        <>
+          {!candidateFor && (
+            <ScheduleTimeField
+              label={
+                endpointTarget === "start" ? "출발 시간" : endpointTarget === "goal" ? "도착 시간" : "방문 예정 시간"
+              }
+              value={scheduledTime}
+              onChange={setScheduledTime}
+            />
+          )}
+          <div className="place-picker-confirm-actions">
+            <button type="button" onClick={() => setSelectedPlaceId(null)}>
+              취소
+            </button>
+            <button
+              type="button"
+              disabled={selectionDisabled(place)}
+              onClick={() => onSelectPlace(place, scheduledTime || undefined)}
+            >
+              {selectionLabel(place)}
+            </button>
+          </div>
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={selectionDisabled(place)}
+          onClick={() => {
+            setScheduledTime("");
+            setSelectedPlaceId(place.id);
+          }}
+        >
+          {selectionDisabled(place) ? "추가됨" : "선택"}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <section className="page map-page place-picker">
       {choosingPlace && (
@@ -123,14 +163,35 @@ export default function PlaceSearchPage({
                   ? "후보 추가"
                   : "장소 추가"}
             </strong>
-            <button type="button" onClick={onCancelSelection} aria-label="장소 선택 취소">
-              ×
-            </button>
+            <div className="place-picker-heading-actions">
+              <button
+                type="button"
+                aria-label={showMap ? "현재 경로 지도 접기" : "현재 경로 지도 보기"}
+                title="현재 경로 지도"
+                aria-expanded={showMap}
+                onClick={() => setShowMap((value) => !value)}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  aria-hidden="true"
+                >
+                  <path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2V5ZM9 3v16M15 5v16" />
+                </svg>
+              </button>
+              <button type="button" onClick={onCancelSelection} aria-label="장소 선택 취소">
+                ×
+              </button>
+            </div>
           </div>
           {insertIndex !== null ? (
             <div className="place-picker-route">
               <span>{insertionFrom}</span>
-              <b aria-label="이 사이에 추가">＋</b>
+              <b aria-label="이 사이에 추가">→ 새 장소 →</b>
               <span>{insertionTo}</span>
             </div>
           ) : (
@@ -148,39 +209,11 @@ export default function PlaceSearchPage({
             {...autocomplete}
             value={query}
             onChange={onQueryChange}
-            placeholder={choosingPlace ? "추가할 장소를 검색하세요" : "주소, 관광지, 식당을 검색하세요"}
+            placeholder="장소명이나 주소 검색"
             label="장소 검색"
           />
           <button disabled={searching}>{searching ? "검색 중" : "검색"}</button>
         </form>
-        {choosingPlace && (
-          <button type="button" className="saved-place-guide" onClick={onScrollToSaved}>
-            <span aria-hidden="true">♡</span>
-            <strong>
-              {savedPlaces.length
-                ? "검색하거나, 아래 저장한 장소에서 선택할 수 있어요"
-                : "검색 결과의 ♡를 눌러 장소를 저장할 수도 있어요"}
-            </strong>
-            <span aria-hidden="true">↓</span>
-          </button>
-        )}
-        {!candidateFor && (
-          <ScheduleTimeField
-            label={
-              endpointTarget === "start" ? "출발 시간" : endpointTarget === "goal" ? "도착 시간" : "방문 예정 시간"
-            }
-            value={scheduledTime}
-            onChange={setScheduledTime}
-          />
-        )}
-        <button
-          className="place-picker-map-toggle"
-          type="button"
-          aria-expanded={showMap}
-          onClick={() => setShowMap((value) => !value)}
-        >
-          {showMap ? "지도 접기" : "현재 경로 지도 보기"}
-        </button>
         {showMap && (
           <div className="place-picker-map">
             <NaverMap places={places} start={start} goal={goal} />
@@ -211,12 +244,7 @@ export default function PlaceSearchPage({
                   <button className="save-place" onClick={() => onToggleSaved(place)}>
                     {savedPlaces.some((item) => item.id === place.id) ? "♥ 저장됨" : "♡ 저장"}
                   </button>
-                  <button
-                    onClick={() => onSelectPlace(place, scheduledTime || undefined)}
-                    disabled={selectionDisabled(place)}
-                  >
-                    {selectionLabel(place)}
-                  </button>
+                  {selectControl(place)}
                 </div>
               </article>
             ))}
@@ -224,10 +252,9 @@ export default function PlaceSearchPage({
         )}
       </div>
       <div ref={savedPlacesRef} className="rest-panel">
-        <div className="panel-handle" />
         <SectionTitle
           compact
-          title={`저장한 장소 ${filteredSavedPlaces.length}곳`}
+          title="저장한 장소에서 선택"
           subtitle={
             savedCategory === "전체"
               ? "카테고리를 고르거나 저장한 장소를 바로 선택하세요"
@@ -272,12 +299,7 @@ export default function PlaceSearchPage({
                 <p>{place.address}</p>
                 <span>{place.category}</span>
               </div>
-              <button
-                onClick={() => onSelectPlace(place, scheduledTime || undefined)}
-                disabled={selectionDisabled(place)}
-              >
-                {selectionLabel(place)}
-              </button>
+              {selectControl(place)}
             </article>
           ))
         ) : (
