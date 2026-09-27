@@ -1,4 +1,5 @@
 import PlaceNameLink from "../navigation/PlaceNameLink";
+import { useState } from "react";
 import { placeCategories } from "../../domain/place";
 import type { Place, SavedCategory } from "../../domain/types";
 import SectionTitle from "../SectionTitle";
@@ -28,6 +29,11 @@ export default function SavedPlacesPage({
   onEditCategories: (place: Place) => void;
   onEditMemo: (place: Place) => void;
 }) {
+  const [filter, setFilter] = useState("");
+  const keyword = filter.trim().toLocaleLowerCase();
+  const visiblePlaces = filteredPlaces.filter((place) =>
+    `${place.name} ${place.address} ${place.memo ?? ""}`.toLocaleLowerCase().includes(keyword),
+  );
   return (
     <section className="page saved-page">
       <SectionTitle
@@ -36,6 +42,15 @@ export default function SavedPlacesPage({
         action="＋ 장소 추가"
         onClick={onOpenSearch}
       />
+      <label className="saved-list-filter">
+        <span>저장한 장소 찾기</span>
+        <input
+          type="search"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="이름·주소·메모로 찾기"
+        />
+      </label>
       <div className="saved-category-tabs" role="tablist" aria-label="저장 장소 카테고리">
         {(["전체", ...categories] as const).map((category) => {
           const count =
@@ -59,8 +74,8 @@ export default function SavedPlacesPage({
         </button>
       </div>
       <div className="saved-list">
-        {filteredPlaces.length ? (
-          filteredPlaces.map((place) => (
+        {visiblePlaces.length ? (
+          visiblePlaces.map((place) => (
             <article className="rest-card saved-place-card" key={place.id}>
               <button
                 className="remove-saved-place"
@@ -110,7 +125,11 @@ export default function SavedPlacesPage({
         ) : (
           <div className="saved-empty">
             <strong>
-              {places.length ? `${activeCategory} 카테고리에 저장한 장소가 없어요` : "아직 저장한 장소가 없어요"}
+              {keyword
+                ? "검색어에 맞는 저장한 장소가 없어요"
+                : places.length
+                  ? `${activeCategory} 카테고리에 저장한 장소가 없어요`
+                  : "아직 저장한 장소가 없어요"}
             </strong>
             <p>
               {places.length

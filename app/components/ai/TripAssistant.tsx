@@ -384,11 +384,8 @@ export default function TripAssistant({
               <div className="trip-ai-suggestions">
                 {[
                   `${dayIndex >= 0 ? dayIndex + 1 : 1}일차에 들를 식당 추천해줘`,
-                  "광주에서 부산까지 가는 길에 휴게소 찾아줘",
+                  `${dayIndex >= 0 ? dayIndex + 1 : 1}일차 이동 경로에 들를 곳을 찾아줘`,
                   "현재 여행 일정 보여줘",
-                  "선택한 날짜의 마지막 경유지를 삭제해줘",
-                  "첫 번째 경유지를 맨 마지막으로 옮겨줘",
-                  ...(trip.days.length >= 3 && dayIndex !== 2 ? ["셋째 날에 식당을 추천해줘"] : []),
                 ].map((prompt) => (
                   <button
                     key={prompt}
@@ -457,7 +454,7 @@ export default function TripAssistant({
               value={draft}
               disabled={loading}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="셋째 날 동선에 맞는 식당을 추천해줘"
+              placeholder="이날 동선에 맞는 식당을 추천해줘"
             />
             <button type="submit" className="trip-ai-primary" disabled={loading || !draft.trim()}>
               {loading ? "찾는 중" : "보내기"}

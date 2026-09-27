@@ -981,7 +981,7 @@ button {
 .plan-map .real-map,
 .plan-map .naver-map,
 .plan-map .map-canvas {
-  height: 190px;
+  height: 220px;
 }
 .plan-map .map-legend {
   bottom: 8px;
@@ -1052,6 +1052,105 @@ button {
 }
 .day-switcher::-webkit-scrollbar {
   display: none;
+}
+.plan-map {
+  position: relative;
+}
+.plan-map > .day-switcher {
+  position: absolute;
+  z-index: 5;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  margin: 0;
+  height: auto;
+  min-height: 0;
+  padding: 5px;
+  border: 1px solid #ffffffa6;
+  border-radius: 14px;
+  background: #f8fcf899;
+  box-shadow: 0 2px 10px #183d2820;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+.plan-map > .day-switcher .day-tab {
+  flex-basis: 80px;
+  min-height: 36px;
+  background: #ffffff99;
+}
+.plan-map > .day-switcher .add-day {
+  background: #ffffff99;
+}
+.plan-map > .day-switcher .day-select {
+  min-height: 36px;
+  padding: 6px 24px 6px 18px;
+}
+.plan-map > .day-switcher .day-select span {
+  position: relative;
+  margin-top: 0;
+  font-size: 10px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.day-background-number {
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 34px;
+  line-height: 1;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: -2px;
+  color: var(--green);
+  opacity: 0.16;
+  pointer-events: none;
+}
+.plan-map > .day-switcher .active .day-background-number {
+  color: white;
+  opacity: 0.25;
+}
+.plan-map > .day-switcher .day-tab.active {
+  background: color-mix(in srgb, var(--green) 85%, transparent);
+}
+.plan-map > .day-switcher .day-tab.active .day-select strong,
+.plan-map > .day-switcher .day-tab.active .day-select span,
+.plan-map > .day-switcher .day-tab.active .day-remove {
+  color: white;
+}
+.swipe-preview-map > .swipe-preview-days {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  z-index: 2;
+  margin: 0;
+  padding: 5px;
+  height: 48px;
+  background: #f8fcf899;
+  border-radius: 14px;
+}
+.swipe-preview-map .swipe-preview-days span {
+  position: static;
+  padding: 0;
+  background: transparent;
+}
+.swipe-preview-map .swipe-preview-days > div {
+  position: relative;
+  width: 80px;
+  height: 36px;
+  padding: 10px 24px 6px 18px;
+  background: #eaf6efcc;
+}
+.swipe-preview-map .swipe-preview-days i.day-background-number {
+  width: auto;
+  height: auto;
+  left: 3px;
+  top: 50%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .day-tab {
   position: relative;
@@ -1281,7 +1380,7 @@ button {
   font-weight: 800;
 }
 .swipe-preview-map {
-  height: 192px;
+  height: 222px;
   margin: 10px 16px 0;
   border: 1px solid var(--line);
   border-radius: 17px;
@@ -3220,12 +3319,6 @@ body:has(.google-test-shell) .google-test-shortcut {
     min-width: 0;
   }
 }
-.saved-search-dismiss-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 11;
-  background: transparent;
-}
 .saved-inline-search form {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -3441,4 +3534,170 @@ body:has(.google-test-shell) .google-test-shortcut {
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted);
+}
+
+/* Place selection is a search task; keep the insertion context in normal flow. */
+.place-picker-context {
+  margin: 8px 16px 12px;
+  padding: 12px;
+  border: 1px solid #dce8df;
+  border-radius: 16px;
+  background: white;
+}
+.place-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+.place-picker-heading button {
+  flex: 0 0 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font-size: 22px;
+}
+.place-picker-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--green);
+}
+.place-picker-route span {
+  padding: 10px;
+  border: 1px solid #b7d4c3;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.place-picker-route b {
+  text-align: center;
+}
+.place-picker .saved-place-guide strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.place-picker .place-search {
+  padding-bottom: 8px;
+}
+.app-header {
+  min-height: 64px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.place-picker-context p {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.place-picker .map-wrap {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 16px 12px !important;
+  overflow: visible;
+  background: transparent;
+}
+.place-picker .place-search,
+.inserting-place .place-picker .place-search:has(input[placeholder="추가할 장소를 검색하세요"]),
+.place-picker .saved-place-guide {
+  position: relative !important;
+  inset: auto !important;
+  width: 100%;
+  margin: 0 0 8px;
+}
+.place-picker .saved-place-guide {
+  height: auto;
+  min-height: 44px;
+  padding: 8px;
+}
+.place-picker .place-picker-map-toggle {
+  display: block;
+  min-height: 44px;
+  margin-top: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+}
+.place-picker-map {
+  height: 180px;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.place-picker-map .real-map,
+.place-picker-map .map-art {
+  height: 180px;
+}
+.place-picker .search-results,
+.inserting-place .place-picker .search-results.with-insertion {
+  top: 64px !important;
+  left: 16px;
+  right: 16px;
+  max-height: 50dvh;
+  z-index: 12;
+}
+.saved-list-filter {
+  display: block;
+  margin: 12px 16px;
+}
+.saved-list-filter span {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.saved-list-filter input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d6e1da;
+  border-radius: 12px;
+  background: white;
+  font-size: 16px;
+}
+.place-memo-icon,
+.promote-candidate {
+  min-width: 44px;
+  min-height: 44px;
+}
+.navigation-links > a,
+.navigation-links > button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.candidate-slide > .schedule-remove,
+.saved-place-card > .remove-saved-place {
+  width: 32px;
+  height: 32px;
+}
+.candidate-slide > .candidate-kind,
+.candidate-slide > .stop-title-row {
+  padding-right: 36px;
+}
+.action-feedback {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: calc(90px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: min(90vw, 480px);
+  padding: 12px 18px;
+  border-radius: 14px;
+  color: white;
+  background: #215c40;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.recently-added {
+  outline: 2px solid #71b991;
+  outline-offset: 4px;
+  border-radius: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .recently-added {
+    scroll-behavior: auto;
+  }
 }

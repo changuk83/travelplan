@@ -37,6 +37,7 @@ export default function TripList({
             aria-label={`${trip.title} 일정 열기`}
             onClick={() => onOpen(trip.id)}
             onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 onOpen(trip.id);

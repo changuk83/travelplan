@@ -15,12 +15,14 @@ export default function NaverMap({
   goal,
   onRouteData,
   cacheScope,
+  topInset = 0,
 }: {
   places: Place[];
   start: RouteEndpoint;
   goal: RouteEndpoint;
   onRouteData?: (legs: RouteLeg[]) => void;
   cacheScope?: RouteCacheScope;
+  topInset?: number;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const overlays = useRef<NaverOverlay[]>([]);
@@ -119,7 +121,9 @@ export default function NaverMap({
       fitRoute.current = () =>
         map.fitBounds(
           bounds,
-          compact ? { top: 24, right: 24, bottom: 34, left: 24 } : { top: 70, right: 42, bottom: 56, left: 42 },
+          compact
+            ? { top: Math.max(24, topInset), right: 24, bottom: 34, left: 24 }
+            : { top: Math.max(70, topInset), right: 42, bottom: 56, left: 42 },
         );
       requestAnimationFrame(() => fitRoute.current?.());
     };
@@ -140,7 +144,7 @@ export default function NaverMap({
     script.onload = draw;
     script.onerror = () => setFailed(true);
     document.head.appendChild(script);
-  }, [key, path, places, start, goal, goalPending]);
+  }, [key, path, places, start, goal, goalPending, topInset]);
 
   if (!key || failed)
     return (

@@ -13,6 +13,7 @@ type CategoryFilter = "전체" | SavedCategory;
 
 export default function PlaceSearchPage({
   autocomplete,
+  dayLabel,
   places,
   start,
   goal,
@@ -44,6 +45,7 @@ export default function PlaceSearchPage({
   onOpenSavedPlaces,
 }: {
   autocomplete: PlaceAutocompleteProps;
+  dayLabel: string;
   places: Place[];
   start: RouteEndpoint;
   goal: RouteEndpoint;
@@ -75,6 +77,7 @@ export default function PlaceSearchPage({
   onOpenSavedPlaces: () => void;
 }) {
   const [scheduledTime, setScheduledTime] = useState("");
+  const [showMap, setShowMap] = useState(false);
   const searchFormRef = useRef<HTMLFormElement>(null);
   const searchResultsRef = useRef<HTMLDivElement>(null);
   const searchVisible = results.length > 0 || Boolean(error);
@@ -106,9 +109,40 @@ export default function PlaceSearchPage({
     !endpointTarget && !candidateFor && places.some((item) => item.id === place.id);
 
   return (
-    <section className="page map-page">
+    <section className="page map-page place-picker">
+      {choosingPlace && (
+        <header className="place-picker-context">
+          <div className="place-picker-heading">
+            <strong>
+              {dayLabel} ·{" "}
+              {endpointTarget
+                ? endpointTarget === "start"
+                  ? "출발지 변경"
+                  : "목적지 변경"
+                : candidateFor
+                  ? "후보 추가"
+                  : "장소 추가"}
+            </strong>
+            <button type="button" onClick={onCancelSelection} aria-label="장소 선택 취소">
+              ×
+            </button>
+          </div>
+          {insertIndex !== null ? (
+            <div className="place-picker-route">
+              <span>{insertionFrom}</span>
+              <b aria-label="이 사이에 추가">＋</b>
+              <span>{insertionTo}</span>
+            </div>
+          ) : (
+            <p>
+              {candidateFor
+                ? `${places.find((item) => item.id === candidateFor)?.name} 대신 갈 곳을 선택하세요`
+                : "검색하거나 저장한 장소에서 선택하세요"}
+            </p>
+          )}
+        </header>
+      )}
       <div className="map-wrap">
-        <NaverMap places={places} start={start} goal={goal} />
         <form ref={searchFormRef} className="place-search" onSubmit={onSearch}>
           <PlaceAutocompleteInput
             {...autocomplete}
@@ -119,26 +153,6 @@ export default function PlaceSearchPage({
           />
           <button disabled={searching}>{searching ? "검색 중" : "검색"}</button>
         </form>
-        {endpointTarget && (
-          <div className="insertion-banner">
-            <strong>{endpointTarget === "start" ? "출발지" : "목적지"}로 사용할 장소를 선택하세요</strong>
-            <button onClick={onCancelSelection}>취소</button>
-          </div>
-        )}
-        {candidateFor !== null && (
-          <div className="insertion-banner">
-            <strong>{places.find((item) => item.id === candidateFor)?.name} 대신 갈 후보를 선택하세요</strong>
-            <button onClick={onCancelSelection}>취소</button>
-          </div>
-        )}
-        {insertIndex !== null && (
-          <div className="insertion-banner">
-            <strong>
-              장소 추가 · {insertionFrom} → {insertionTo}
-            </strong>
-            <button onClick={onCancelSelection}>취소</button>
-          </div>
-        )}
         {choosingPlace && (
           <button type="button" className="saved-place-guide" onClick={onScrollToSaved}>
             <span aria-hidden="true">♡</span>
@@ -158,6 +172,19 @@ export default function PlaceSearchPage({
             value={scheduledTime}
             onChange={setScheduledTime}
           />
+        )}
+        <button
+          className="place-picker-map-toggle"
+          type="button"
+          aria-expanded={showMap}
+          onClick={() => setShowMap((value) => !value)}
+        >
+          {showMap ? "지도 접기" : "현재 경로 지도 보기"}
+        </button>
+        {showMap && (
+          <div className="place-picker-map">
+            <NaverMap places={places} start={start} goal={goal} />
+          </div>
         )}
         {searchVisible && (
           <div ref={searchResultsRef} className={`search-results ${choosingPlace ? "with-insertion" : ""}`}>

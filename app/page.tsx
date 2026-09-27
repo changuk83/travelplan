@@ -50,6 +50,25 @@ export default function Home() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [tab, setTab] = useState<AppTab>("plan");
   const [savedSearchOpen, setSavedSearchOpen] = useState(false);
+  const [addedPlace, setAddedPlace] = useState<{ id: string; message: string } | null>(null);
+  useEffect(() => {
+    if (!addedPlace || tab !== "plan") return;
+    const frame = requestAnimationFrame(() => {
+      const card = Array.from(document.querySelectorAll<HTMLElement>("[data-place-id]")).find(
+        (element) => element.dataset.placeId === addedPlace.id,
+      );
+      card?.scrollIntoView({ block: "center", behavior: "smooth" });
+      card?.classList.add("recently-added");
+    });
+    const timer = window.setTimeout(() => {
+      document.querySelectorAll(".recently-added").forEach((element) => element.classList.remove("recently-added"));
+      setAddedPlace(null);
+    }, 3000);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [addedPlace, tab]);
   const { trips, setTrips, activeTripId, setActiveTripId, tripsLoaded, days, setDays, activeDayId, setActiveDayId } =
     useTrips();
   const { savedPlaces, setSavedPlaces, savedCategories, setSavedCategories, savedLoaded } = useSavedPlaces();
@@ -128,11 +147,11 @@ export default function Home() {
   const insertionFrom =
     insertIndex === null
       ? ""
-      : `${activeDay.label} · ${insertIndex === 0 ? activeDay.start.name : places[insertIndex - 1]?.name}`;
+      : ((insertIndex === 0 ? activeDay.start.name : places[insertIndex - 1]?.name) ?? "이전 장소");
   const insertionTo =
     insertIndex === null
       ? ""
-      : `( 추가할 장소 ) → ${insertIndex === places.length ? activeDay.goal.name : places[insertIndex]?.name}`;
+      : ((insertIndex === places.length ? activeDay.goal.name : places[insertIndex]?.name) ?? "다음 장소");
   const filteredSavedPlaces =
     savedCategory === "전체"
       ? savedPlaces
@@ -421,10 +440,9 @@ export default function Home() {
     }
     setResults([]);
     setQuery("");
-    if (insertIndex !== null) {
-      setInsertIndex(null);
-      setTab("plan");
-    }
+    setInsertIndex(null);
+    setAddedPlace({ id: place.id, message: `${activeDay.label}에 ${place.name} 추가했어요` });
+    setTab("plan");
   }
   function addAiPlace(recommendation: AiRecommendation): string | null {
     const error = applyLocalCommand({
@@ -747,6 +765,11 @@ export default function Home() {
 
   return (
     <main className="app-shell">
+      {addedPlace && (
+        <div className="action-feedback" role="status">
+          {addedPlace.message}
+        </div>
+      )}
       <AppHeader tab={tab} onManageCategories={manageSavedCategories} />
       {cloudSync.syncError && (
         <div className="cloud-sync-notice" role="status">
@@ -834,14 +857,6 @@ export default function Home() {
                       : "기기에 자동 저장"
             }
           />
-          <DaySwitcher
-            days={days}
-            activeDayId={activeDayId}
-            onSelect={selectDay}
-            onAdd={addDay}
-            onEditDate={(day) => setDateEditor({ dayId: day.id, value: dateInputValue(day.date) })}
-            onRemove={removeDay}
-          />
           <div className="map-pin-row">
             <button type="button" className="ai-assistant-launch" onClick={() => setAssistantOpen(true)}>
               AI에게 부탁하기
@@ -857,7 +872,16 @@ export default function Home() {
             </button>
           </div>
           <div className={`plan-map ${mapPinned ? "pinned" : ""}`}>
+            <DaySwitcher
+              days={days}
+              activeDayId={activeDayId}
+              onSelect={selectDay}
+              onAdd={addDay}
+              onEditDate={(day) => setDateEditor({ dayId: day.id, value: dateInputValue(day.date) })}
+              onRemove={removeDay}
+            />
             <NaverMap
+              topInset={68}
               places={mapPlaces}
               start={activeDay.start}
               goal={activeDay.goal}
@@ -865,7 +889,10 @@ export default function Home() {
               cacheScope={routeCacheScope}
             />
           </div>
-          <SectionTitle title={`${activeDay.label} 일정`} subtitle="각 구간의 실시간 자동차 거리와 예상 시간이에요" />
+          <SectionTitle
+            title={`${activeDay.label} 일정`}
+            subtitle="이전 장소에서의 예상 거리·시간이에요. 교통 상황에 따라 달라질 수 있어요."
+          />
           <ScheduleTimeline
             day={activeDay}
             onTimeChange={(key, time) =>
@@ -903,6 +930,7 @@ export default function Home() {
       )}
       {tab === "map" && (
         <PlaceSearchPage
+          dayLabel={activeDay.label}
           autocomplete={autocomplete}
           key={`${activeDayId}:${endpointTarget}:${candidateFor}:${insertIndex}`}
           places={places}

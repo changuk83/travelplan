@@ -10,6 +10,11 @@ export function shortDate(value: string) {
   return `${date.getMonth() + 1}월 ${date.getDate()}일`;
 }
 
+export function compactDateLabel(value: string) {
+  const match = value.match(/^(\d{1,2})월\s*(\d{1,2})일$/);
+  return match ? `${Number(match[1])}/${Number(match[2])}` : value;
+}
+
 export function nextDateLabel(value: string) {
   const match = value.match(/^(\d{1,2})월\s*(\d{1,2})일$/);
   if (!match) return "날짜 미정";

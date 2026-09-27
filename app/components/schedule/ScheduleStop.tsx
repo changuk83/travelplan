@@ -57,6 +57,7 @@ export default function ScheduleStop({
   }
   return (
     <article
+      data-place-id={place.id}
       data-order-index={index}
       className={`timeline-item user-stop candidate-stop ${dragging ? "dragging" : ""}`}
     >

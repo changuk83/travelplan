@@ -11,11 +11,7 @@ export default function AppHeader({ tab, onManageCategories }: { tab: AppTab; on
         <button className="category-manage-button" onClick={onManageCategories}>
           카테고리 관리
         </button>
-      ) : (
-        <button className="profile" aria-label="프로필">
-          CU
-        </button>
-      )}
+      ) : null}
     </header>
   );
 }

@@ -1,4 +1,5 @@
 import type { DayPlan } from "../../domain/types";
+import { compactDateLabel } from "../../domain/date";
 
 export default function DaySwipePreview({
   day,
@@ -17,7 +18,6 @@ export default function DaySwipePreview({
       <div className="swipe-preview-hero">
         <div className="swipe-preview-hero-top">
           <span>{tripRange}</span>
-          <span>맑음 27°</span>
         </div>
         <strong>{tripTitle}</strong>
         <div className="swipe-preview-stats">
@@ -26,16 +26,16 @@ export default function DaySwipePreview({
           <span>자동 저장</span>
         </div>
       </div>
-      <div className="swipe-preview-days">
-        <div>
-          <strong>{day.label}</strong>
-          <span>{day.date}</span>
-        </div>
-      </div>
       <div className="swipe-preview-pin-row">
         <span>스크롤할 때 지도 고정</span>
       </div>
       <div className="swipe-preview-map">
+        <div className="swipe-preview-days">
+          <div>
+            <i className="day-background-number">{day.label.replace(/\D/g, "")}</i>
+            <span>{compactDateLabel(day.date)}</span>
+          </div>
+        </div>
         <i />
         <i />
         <i />

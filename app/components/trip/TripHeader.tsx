@@ -17,7 +17,6 @@ export default function TripHeader({
         <span>
           {days[0]?.date}–{days[days.length - 1]?.date} · {days.length}일 여행
         </span>
-        <span className="weather">맑음 27°</span>
       </div>
       <h2>{trip.title}</h2>
       <div className="hero-stats">

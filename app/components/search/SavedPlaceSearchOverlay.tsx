@@ -2,7 +2,7 @@
 
 import PlaceNameLink from "../navigation/PlaceNameLink";
 import PlaceAutocompleteInput, { type PlaceAutocompleteProps } from "./PlaceAutocompleteInput";
-import type { FormEvent } from "react";
+import { useEffect, useRef, type FormEvent } from "react";
 import type { Place } from "../../domain/types";
 
 export default function SavedPlaceSearchOverlay({
@@ -28,10 +28,19 @@ export default function SavedPlaceSearchOverlay({
   onDismiss: () => void;
   onSave: (place: Place) => void;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target instanceof Element)) return;
+      if (panelRef.current?.contains(event.target) || event.target.closest('[role="dialog"], .dialog-backdrop')) return;
+      onDismiss();
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    return () => document.removeEventListener("pointerdown", dismiss, true);
+  }, [onDismiss]);
   return (
     <>
-      <div className="saved-search-dismiss-layer" role="presentation" onPointerDown={onDismiss} />
-      <section className="saved-inline-search" aria-label="내 장소 검색">
+      <section ref={panelRef} className="saved-inline-search" aria-label="내 장소 검색">
         <form onSubmit={onSearch}>
           <PlaceAutocompleteInput
             {...autocomplete}
