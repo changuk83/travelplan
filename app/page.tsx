@@ -117,7 +117,7 @@ export default function Home() {
     () => (candidateFor ? (places.find((place) => place.id === candidateFor) ?? null) : null),
     [candidateFor, places],
   );
-  const { query, setQuery, results, setResults, searching, searchError, setSearchError, source, search } =
+  const { query, setQuery, results, setResults, searching, searchError, setSearchError, source, search, autocomplete } =
     usePlaceSearch({
       apiBase: API_BASE,
       previousPlace: searchPreviousPlace,
@@ -903,6 +903,7 @@ export default function Home() {
       )}
       {tab === "map" && (
         <PlaceSearchPage
+          autocomplete={autocomplete}
           key={`${activeDayId}:${endpointTarget}:${candidateFor}:${insertIndex}`}
           places={places}
           start={activeDay.start}
@@ -975,6 +976,7 @@ export default function Home() {
       )}
       {savedSearchOpen && tab === "saved" && (
         <SavedPlaceSearchOverlay
+          autocomplete={autocomplete}
           query={query}
           results={results}
           searching={searching}

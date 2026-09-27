@@ -1,6 +1,7 @@
 "use client";
 
 import PlaceNameLink from "../navigation/PlaceNameLink";
+import PlaceAutocompleteInput, { type PlaceAutocompleteProps } from "./PlaceAutocompleteInput";
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 import NaverMap from "../../NaverMap";
 import { distanceLabel, placeCategories, pointDistance } from "../../domain/place";
@@ -11,6 +12,7 @@ import SectionTitle from "../SectionTitle";
 type CategoryFilter = "전체" | SavedCategory;
 
 export default function PlaceSearchPage({
+  autocomplete,
   places,
   start,
   goal,
@@ -41,6 +43,7 @@ export default function PlaceSearchPage({
   onSavedCategoryChange,
   onOpenSavedPlaces,
 }: {
+  autocomplete: PlaceAutocompleteProps;
   places: Place[];
   start: RouteEndpoint;
   goal: RouteEndpoint;
@@ -107,11 +110,12 @@ export default function PlaceSearchPage({
       <div className="map-wrap">
         <NaverMap places={places} start={start} goal={goal} />
         <form ref={searchFormRef} className="place-search" onSubmit={onSearch}>
-          <input
+          <PlaceAutocompleteInput
+            {...autocomplete}
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onChange={onQueryChange}
             placeholder={choosingPlace ? "추가할 장소를 검색하세요" : "주소, 관광지, 식당을 검색하세요"}
-            aria-label="장소 검색"
+            label="장소 검색"
           />
           <button disabled={searching}>{searching ? "검색 중" : "검색"}</button>
         </form>

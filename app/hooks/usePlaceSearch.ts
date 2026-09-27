@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { Place, RouteEndpoint, SearchSource } from "../domain/types";
 
 export function usePlaceSearch({
@@ -19,6 +19,56 @@ export function usePlaceSearch({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [source, setSource] = useState<SearchSource>("");
+  const cache = useRef(new Map<string, { at: number; places: Place[]; source: SearchSource }>());
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => requestRef.current?.abort(), []);
+  const context = new URLSearchParams();
+  for (const [prefix, point] of [
+    ["from", previousPlace],
+    ["to", nextPlace],
+    ["main", candidateMain],
+  ] as const) {
+    if (point) {
+      context.set(`${prefix}Lng`, String(point.longitude));
+      context.set(`${prefix}Lat`, String(point.latitude));
+    }
+  }
+  const contextKey = context.toString();
+  const lookup = useCallback(
+    async (term: string, signal: AbortSignal) => {
+      const params = new URLSearchParams(contextKey);
+      params.set("q", term);
+      const url = `${apiBase}/api/places/search?${params}`;
+      const cached = cache.current.get(url);
+      if (cached && Date.now() - cached.at < 60_000) return cached;
+      const response = await fetch(url, { signal });
+      const data = (await response.json()) as { places?: Place[]; source?: SearchSource; error?: string };
+      if (!response.ok) throw new Error(data.error || "검색에 실패했습니다.");
+      const result = { places: data.places ?? [], source: data.source ?? ("" as SearchSource), at: Date.now() };
+      if (!signal.aborted) {
+        if (cache.current.size >= 30) cache.current.delete(cache.current.keys().next().value!);
+        cache.current.set(url, result);
+      }
+      return result;
+    },
+    [apiBase, contextKey],
+  );
+  const loadSuggestions = useCallback(
+    async (term: string, signal: AbortSignal) => (await lookup(term, signal)).places,
+    [lookup],
+  );
+  const changeQuery = (value: string) => {
+    requestRef.current?.abort();
+    setSearching(false);
+    setQuery(value);
+    setResults([]);
+    setSearchError("");
+  };
+  function onSuggestionSelect(place: Place) {
+    changeQuery(place.name);
+    setResults([place]);
+    setSource("");
+  }
 
   async function search(event: FormEvent) {
     event.preventDefault();
@@ -30,39 +80,41 @@ export function usePlaceSearch({
     }
     setSearching(true);
     setSearchError("");
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     try {
-      const params = new URLSearchParams({ q: term });
-      if (previousPlace) {
-        params.set("fromLng", String(previousPlace.longitude));
-        params.set("fromLat", String(previousPlace.latitude));
-      }
-      if (nextPlace) {
-        params.set("toLng", String(nextPlace.longitude));
-        params.set("toLat", String(nextPlace.latitude));
-      }
-      if (candidateMain) {
-        params.set("mainLng", String(candidateMain.longitude));
-        params.set("mainLat", String(candidateMain.latitude));
-      }
-      const response = await fetch(`${apiBase}/api/places/search?${params}`);
-      const data = (await response.json()) as { places?: Place[]; error?: string; source?: Exclude<SearchSource, ""> };
-      if (!response.ok) throw new Error(data.error);
+      const data = await lookup(term, controller.signal);
+      if (controller.signal.aborted) return;
       setResults(data.places ?? []);
       setSource(data.source ?? "");
       if (!(data.places ?? []).length) setSearchError("검색 결과가 없습니다.");
     } catch (error) {
+      if (controller.signal.aborted) return;
       setSearchError(error instanceof Error ? error.message : "검색에 실패했습니다.");
     } finally {
-      setSearching(false);
+      if (!controller.signal.aborted) setSearching(false);
     }
   }
 
   function resetSearch() {
-    setQuery("");
+    changeQuery("");
     setResults([]);
     setSearchError("");
     setSource("");
   }
 
-  return { query, setQuery, results, setResults, searching, searchError, setSearchError, source, search, resetSearch };
+  return {
+    query,
+    setQuery: changeQuery,
+    results,
+    setResults,
+    searching,
+    searchError,
+    setSearchError,
+    source,
+    search,
+    resetSearch,
+    autocomplete: { loadSuggestions, onSuggestionSelect },
+  };
 }

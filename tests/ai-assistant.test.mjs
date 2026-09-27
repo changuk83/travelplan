@@ -34,7 +34,9 @@ execFileSync(
 const require = createRequire(import.meta.url);
 const { insertAiRecommendation } = require(path.join(output, "app/domain/ai-actions.js"));
 const { handleAiChat } = require(path.join(output, "server/ai-assistant.js"));
-const { naverPlaceUrl } = require(path.join(output, "app/domain/naver-place-url.js"));
+const { naverPlaceUrl, naverPlaceAppUrl, naverMobilePlatform } = require(
+  path.join(output, "app/domain/naver-place-url.js"),
+);
 const { distanceToRoute, sampleRoutePoints, isHighwayRestStop } = require(path.join(output, "server/ai-assistant.js"));
 const { createScheduleTools, scheduleTools } = require(path.join(output, "server/schedule-tools.js"));
 
@@ -151,6 +153,24 @@ test("Naver links retain verified IDs and avoid overly specific address searches
   );
   assert.equal(naverPlaceUrl({ ...p, link: "https://place.map.kakao.com/12345" }), naverPlaceUrl(p));
   assert.equal(naverPlaceUrl({ ...p, link: "https://map.naver.com.evil.test/p/entry/place/12345" }), naverPlaceUrl(p));
+});
+
+test("mobile Naver links use direct app schemes and retain a safe Android web fallback", () => {
+  assert.equal(naverMobilePlatform("Mozilla iPhone"), "ios");
+  assert.equal(naverMobilePlatform("Mozilla Android"), "android");
+  assert.equal(naverMobilePlatform("Mozilla Macintosh", 5), "ios");
+  assert.equal(naverMobilePlatform("Mozilla Macintosh", 0), null);
+  assert.equal(naverMobilePlatform("Mozilla Windows", 10), null);
+  const p = { ...place, name: "식당 & 카페 #1" };
+  const ios = new URL(naverPlaceAppUrl(p, "ios", "https://example.com/"));
+  assert.equal(ios.protocol, "nmap:");
+  assert.equal(ios.hostname, "search");
+  assert.equal(ios.searchParams.get("query"), "부산 식당 & 카페 #1");
+  assert.equal(ios.searchParams.get("appname"), "https://example.com/");
+  const android = naverPlaceAppUrl(p, "android", "https://example.com/");
+  assert.ok(android.startsWith("intent://search?"));
+  assert.ok(android.includes("package=com.nhn.android.nmap;"));
+  assert.ok(android.includes(`S.browser_fallback_url=${encodeURIComponent(naverPlaceUrl(p))};end`));
 });
 
 for (const fixOnRetry of [false, true]) {

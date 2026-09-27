@@ -1,10 +1,12 @@
 "use client";
 
 import PlaceNameLink from "../navigation/PlaceNameLink";
+import PlaceAutocompleteInput, { type PlaceAutocompleteProps } from "./PlaceAutocompleteInput";
 import type { FormEvent } from "react";
 import type { Place } from "../../domain/types";
 
 export default function SavedPlaceSearchOverlay({
+  autocomplete,
   query,
   results,
   searching,
@@ -15,6 +17,7 @@ export default function SavedPlaceSearchOverlay({
   onDismiss,
   onSave,
 }: {
+  autocomplete: PlaceAutocompleteProps;
   query: string;
   results: Place[];
   searching: boolean;
@@ -30,11 +33,12 @@ export default function SavedPlaceSearchOverlay({
       <div className="saved-search-dismiss-layer" role="presentation" onPointerDown={onDismiss} />
       <section className="saved-inline-search" aria-label="내 장소 검색">
         <form onSubmit={onSearch}>
-          <input
+          <PlaceAutocompleteInput
+            {...autocomplete}
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onChange={onQueryChange}
             placeholder="저장할 장소 이름이나 주소를 검색하세요"
-            aria-label="저장할 장소 검색"
+            label="저장할 장소 검색"
           />
           <button type="submit" disabled={searching}>
             {searching ? "검색 중" : "검색"}

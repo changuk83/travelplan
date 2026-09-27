@@ -3264,6 +3264,23 @@ body:has(.google-test-shell) .google-test-shortcut {
   color: #276345;
 }
 
+.naver-web-fallback {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.naver-web-fallback a {
+  display: inline-block;
+  padding: 4px 0;
+  color: #276345;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .place-name-link:focus-visible {
   outline: 2px solid #276345;
   outline-offset: 3px;
@@ -3370,4 +3387,58 @@ body:has(.google-test-shell) .google-test-shortcut {
 .schedule-time-field button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.place-autocomplete {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.place-autocomplete input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.place-autocomplete-panel {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: min(360px, 45dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #dce6df;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 12px 32px #163b2826;
+  color: var(--ink);
+}
+.place-autocomplete-option {
+  padding: 11px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #edf2ee;
+}
+.place-autocomplete-option strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.place-autocomplete-option span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.place-autocomplete-option:hover,
+.place-autocomplete-option[aria-selected="true"] {
+  background: #edf6ef;
+}
+.place-autocomplete-panel p {
+  margin: 0;
+  padding: 9px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
 }
