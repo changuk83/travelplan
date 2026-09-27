@@ -3229,3 +3229,27 @@ body:has(.google-test-shell) .google-test-shortcut {
 .saved-inline-search form {
   grid-template-columns: minmax(0, 1fr) auto;
 }
+/* Keep save failures visible without hiding locally preserved edits. */
+.cloud-sync-notice {
+  margin: 8px 16px;
+  padding: 12px;
+  border: 1px solid #e4c98b;
+  border-radius: 12px;
+  background: #fff9e9;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.cloud-sync-notice p {
+  margin: 0 0 8px;
+}
+.cloud-sync-notice > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cloud-sync-notice button {
+  padding: 6px 10px;
+  border: 1px solid #d2bc8c;
+  border-radius: 8px;
+  background: white;
+}

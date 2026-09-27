@@ -1,0 +1,349 @@
+.trip-ai-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  isolation: isolate;
+  color: #243c33;
+}
+.trip-ai-overlay *,
+.trip-ai-overlay *::before,
+.trip-ai-overlay *::after {
+  box-sizing: border-box;
+}
+.trip-ai-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #102c285c;
+  cursor: pointer;
+}
+.trip-ai-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 640px);
+  min-width: 0;
+  max-height: 94vh;
+  max-height: 94dvh;
+  height: 820px;
+  border-radius: 24px 24px 0 0;
+  background: #f8faf8;
+  box-shadow: 0 -10px 50px #143d2926;
+  overflow: hidden;
+  outline: none;
+}
+.trip-ai-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid #e0e9e2;
+  background: #eff7ef;
+}
+.trip-ai-header > div {
+  min-width: 0;
+}
+.trip-ai-header h2 {
+  margin: 4px 0;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+.trip-ai-header p {
+  margin: 0;
+  color: #577365;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.trip-ai-eyebrow {
+  color: #56806a;
+  font-size: 0.75rem;
+}
+.trip-ai-overlay button,
+.trip-ai-overlay select,
+.trip-ai-overlay textarea {
+  font: inherit;
+}
+.trip-ai-overlay button {
+  cursor: pointer;
+}
+.trip-ai-overlay button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.trip-ai-overlay button:focus-visible,
+.trip-ai-overlay select:focus-visible,
+.trip-ai-overlay textarea:focus-visible {
+  outline: 3px solid #70aa7d;
+  outline-offset: 2px;
+}
+.trip-ai-overlay .trip-ai-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  color: #357553;
+  background: #e0eddf;
+  font-size: 1.7rem;
+  line-height: 1;
+}
+.trip-ai-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.trip-ai-welcome {
+  padding: 8px 0 20px;
+}
+.trip-ai-welcome h3 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+}
+.trip-ai-welcome p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #66796e;
+}
+.trip-ai-suggestions {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+.trip-ai-suggestions button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid #dce7da;
+  border-radius: 13px;
+  background: white;
+  color: #3c664d;
+  text-align: left;
+  font-size: 0.87rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.trip-ai-suggestions span {
+  flex-shrink: 0;
+}
+.trip-ai-turn {
+  margin-bottom: 20px;
+  min-width: 0;
+}
+.trip-ai-message {
+  margin: 0 0 12px;
+  font-size: 0.94rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.trip-ai-turn-user {
+  display: flex;
+  justify-content: flex-end;
+}
+.trip-ai-turn-user .trip-ai-message {
+  max-width: 92%;
+  margin: 0;
+  padding: 11px 15px;
+  background: #dfecde;
+  border-radius: 16px 16px 4px 16px;
+}
+.trip-ai-card {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid #dfe7de;
+  border-radius: 16px;
+  background: #fff;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trip-ai-category {
+  color: #608164;
+  font-size: 0.75rem;
+}
+.trip-ai-card h3 {
+  margin: 4px 0 6px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.trip-ai-card p {
+  margin: 7px 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.trip-ai-card .trip-ai-address {
+  color: #7a857e;
+  font-size: 0.78rem;
+}
+.trip-ai-card .trip-ai-distance {
+  color: #467256;
+  font-size: 0.8rem;
+}
+.trip-ai-card-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+.trip-ai-card-fields label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #647369;
+  font-size: 0.75rem;
+}
+.trip-ai-card-fields select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 8px;
+  border: 1px solid #dce5db;
+  border-radius: 8px;
+  color: #395b43;
+  background: #f9fbf8;
+  font-size: 16px;
+}
+.trip-ai-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.trip-ai-card-actions button {
+  flex: 1 1 120px;
+  padding: 10px 8px;
+  min-height: 42px;
+  border: 1px solid #d6e3d4;
+  border-radius: 9px;
+  color: #416b49;
+  background: #f2f7f0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.trip-ai-overlay .trip-ai-primary {
+  border: 1px solid #367b49;
+  background: #367b49;
+  color: white;
+}
+.trip-ai-loading {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #4a7956;
+  padding: 12px 0;
+}
+.trip-ai-error {
+  color: #9b463e;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.trip-ai-composer {
+  flex: 0 0 auto;
+  padding: 14px 20px max(12px, env(safe-area-inset-bottom));
+  background: white;
+  border-top: 1px solid #e1e8df;
+}
+.trip-ai-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.trip-ai-input-row textarea {
+  display: block;
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  min-height: 60px;
+  max-height: 140px;
+  padding: 11px;
+  resize: vertical;
+  border: 1px solid #cddfcd;
+  border-radius: 12px;
+  color: #284632;
+  background: #f8fbf6;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.trip-ai-input-row button {
+  flex: 0 0 auto;
+  max-width: 35%;
+  padding: 10px 13px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.trip-ai-privacy {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #79847c;
+  overflow-wrap: anywhere;
+}
+.trip-ai-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 360px) {
+  .trip-ai-header,
+  .trip-ai-messages {
+    padding: 14px;
+  }
+  .trip-ai-composer {
+    padding-inline: 12px;
+  }
+  .trip-ai-card {
+    padding: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trip-ai-messages {
+    scroll-behavior: auto;
+  }
+}
+.map-pin-row {
+  min-height: 40px;
+  height: auto;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.map-pin-row .ai-assistant-launch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #cfe0ca;
+  border-radius: 20px;
+  color: #376b46;
+  background: #edf5e9;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.ai-assistant-launch:focus-visible {
+  outline: 3px solid #70aa7d;
+  outline-offset: 2px;
+}

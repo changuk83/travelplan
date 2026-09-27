@@ -8,7 +8,15 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
-  globalIgnores([".next/**", "dist/**", "out/**", "build/**", "next-env.d.ts", "worker-configuration.d.ts"]),
+  globalIgnores([
+    ".next/**",
+    "dist/**",
+    "out/**",
+    "build/**",
+    "**/.wrangler/**",
+    "next-env.d.ts",
+    "worker-configuration.d.ts",
+  ]),
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   react.configs.flat.recommended,

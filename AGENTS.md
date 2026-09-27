@@ -32,6 +32,32 @@
 
 ## 현재 구현 기능
 
+### AI 여행 도우미
+
+- 국내 일정의 `AI에게 부탁하기`에서 질문과 현재 여행을 서버로 보내 장소를 검색·추천한다.
+- `app/components/ai/TripAssistant.tsx`: 하단 대화창과 추천 카드, 날짜·삽입 위치 선택.
+- `app/domain/ai.ts`: 클라이언트/서버 공유 요청·응답 타입.
+- `server/ai-assistant.ts`: OpenAI Responses API 함수 호출과 실제 검색 결과 기반 추천. 서버가 보유한 결과 ID만 장소 카드로 변환한다.
+- 추천 장소는 사용자가 `일정에 추가` 또는 `내 장소 저장`을 눌렀을 때 반영하며, 여행 이름 카테고리를 유지한다. 날짜 존재 여부·중복·하루 30곳 제한을 검사한다.
+- 긴 구간의 장소 검색은 실제 경로선의 중간 지점도 검색한다. 휴게소 진입 방향이 검증되지 않은 결과를 확정된 경유 가능 장소로 표현하지 않는다.
+- 휴게소 자체 검색은 `고속도로 휴게소`로 정규화하고 실제 고속도로휴게소 분류만 추천해 내부 매장·충전소를 제외한다. 명확한 행정구역 또는 기존 일정으로 확인되는 출발지는 재확인하지 않는다.
+- 로컬 개발에서는 `/api/ai/chat`과 `.env.local`의 `OPENAI_API_KEY`를 사용한다. 공개 앱에서는 `NEXT_PUBLIC_API_BASE_URL`의 별도 `gildam-api` Worker를 사용한다.
+- Worker의 `OPENAI_API_KEY`는 서버 Secret, `OPENAI_MODEL`은 선택 설정이다. 키가 없으면 일반 사용자용 오류를 반환하며 키·원본 공급자 오류를 노출하지 않는다.
+- AI 호출은 IP당 분당 5회 제한하며 요청별 도구 반복·검색 횟수도 제한한다. 이는 전역 일일 지출 상한은 아니므로 공개 사용 전 인증과 총사용량 통제가 필요하다.
+- `npm run test:ai`는 실제 유료 호출 없이 서버 검증 및 일정 삽입을 확인한다. 실제 모델·검색 연결 확인은 키를 등록한 뒤 수행한다.
+
+### 내부 일정 도구 (MCP 연결 준비 단계)
+
+- `server/schedule-tools.ts`: `list_trips`, `get_day_schedule`, `add_schedule_place`, `remove_schedule_place`, `move_schedule_place`, `add_place_candidate`의 스키마·설명·MCP annotations를 가진 공통 레지스트리. 현재 OpenAI function calling에 연결했으며 MCP 프로토콜 서버 자체는 공개하지 않았다.
+- AI의 조회는 요청에 포함된 여행 스냅샷을 사용한다. 등록·삭제·이동·후보 추가는 한 번에 한 건의 `ScheduleAction` 확인 카드만 준비한다. 사용자가 `변경 적용`/`삭제 확인`을 눌러야 저장된다.
+- `app/domain/schedule-service.ts`: UI와 서버의 공통 순수 변경 함수. 중복·좌표·일차·30곳 제한, 후보 승격, 이동 시 후보/메모 보존, 내 장소 및 여행 카테고리 등록을 처리한다.
+- `api-worker/src/schedule-api.ts`: `POST /api/schedule/commands`에서 서버가 사용자 데이터를 다시 읽고 revision 및 여행 updatedAt을 검사한 뒤 적용한다. 사용자 ID는 요청/모델이 아니라 서버에서 결정한다(아직 기본 사용자 1).
+- `api-worker/src/state-store.ts`: D1 읽기/쓰기 분리. 전체 스냅샷 저장을 유지하지만 revision CAS와 CHECK guard를 같은 D1 batch에서 실행하여 충돌 시 전체 transaction을 롤백한다.
+- `requestId`와 fingerprint로 동일 요청 재시도는 최초 응답을 반환한다. 응답 기록은 사용자별 최근 50건·24시간으로 제한하고, 만료된 재시도는 revision 검사로 막는다.
+- 새 `0005_state_revisions.sql` migration → API Worker → 프런트엔드 순으로 함께 배포해야 한다. 이전 프런트의 revision 없는 PUT은 428로 거절된다. 클라이언트는 revision 없는 이전 서버에 자동 저장하지 않는다.
+- 외부 MCP endpoint, 인증, 사용자별 로그인은 미구현이다. 로그인 전까지 외부 AI 클라이언트에 쓰기 도구를 개방하지 않는다.
+- `npm run test:schedule`: 순수 명령, 실제 SQLite 기반 저장/CAS/재시도, HTTP 명령 처리, 프런트 동기화 경합을 검증한다. 실제 사용자 DB가 아닌 메모리 테스트 DB만 쓴다.
+
 ### 여행과 날짜
 
 - 여러 여행을 여행 탭에서 생성·선택·관리
@@ -136,7 +162,9 @@
   - `gildam-saved-categories`
   - `gildam-device-id`
 - `NEXT_PUBLIC_API_BASE_URL`이 설정되면 Worker의 `/api/state`와 동기화한다.
-- 변경 후 700ms 디바운스로 전체 상태를 `PUT`한다.
+- 변경 후 700ms 디바운스로 전체 상태를 `PUT`한다. 저장 요청은 직렬 실행하며 `expectedRevision` 및 `requestId`가 필요하다. 저장 도중 새 편집은 다음 요청으로 이어 보낸다.
+- 동기화 오류·충돌에서는 로컬 수정을 보존하고 안내를 표시한다. 명시적인 서버 다시 불러오기는 확인 후 수행하며 `gildam-sync-draft-backup`에 현재 스냅샷을 백업한다. 결과가 불명확한 명령은 같은 요청을 재시도하여 중복 적용을 막는다.
+- API 주소별 `gildam-sync:<인코딩된 API 주소>`에 마지막 확인된 revision과 상태 fingerprint를 저장한다. 저장 실패 후 새로고침해도 미저장 로컬 수정을 감지하여 서버 값으로 자동 덮어쓰지 않는다. 명시적으로 버리고 불러올 때만 `reloadCloud({ discardLocal: true })`를 사용한다.
 - 날짜 목록은 별도 복사본 없이 활성 여행의 `days`를 단일 원본으로 사용한다. 날짜 변경은 `useTrips`의 `setDays`가 활성 여행을 직접 갱신한다.
 - 로컬 저장소 복원은 초기 렌더 중 동기 상태 변경을 피하도록 다음 애니메이션 프레임에서 적용한다.
 - 현재 Worker는 기기 ID를 받지만 조회·저장은 항상 `DEFAULT_USER_ID = "1"`을 사용한다.
@@ -150,6 +178,8 @@
 - `POST /api/google/route-search`: Google 해외 경로와 경로 주변 장소 검색, IP당 분당 10회
 - `GET /api/state`: 사용자 상태 조회, IP당 분당 60회
 - `PUT /api/state`: 사용자 상태 전체 저장, IP당 분당 10회
+- `POST /api/schedule/commands`: 확인한 일정 명령 적용, 상태 쓰기 제한(IP당 분당 10회) 공유
+- `POST /api/ai/chat`: AI 검색·일정 조회·변경 제안, IP당 분당 5회
 - CORS 허용 출처는 `api-worker/wrangler.jsonc`의 `ALLOWED_ORIGINS`에서 관리한다.
 - 네이버 Directions API의 한 요청 경유지 제한을 처리하기 위해 여러 요청으로 나누어 전체 경로를 합친다.
 
@@ -194,6 +224,8 @@ GOOGLE_MAPS_API_KEY
 
 Node.js `22.13.0` 이상을 사용한다. 과거 Homebrew Node 14가 오래된 ICU 라이브러리를 참조해 `dyld` 오류가 발생했으므로 Node 14는 사용하지 않는다.
 
+- 의존성 잠금 파일은 현재 패키지와 일치하는 `pnpm-lock.yaml`을 기준으로 한다. Sites 빌드 선택 충돌을 일으키던 초기 starter의 `package-lock.json`은 `outputs/package-lock.before-sites-cleanup.json`에 보존하고 소스에서 제외했다.
+
 ```bash
 npm install
 npm run dev
@@ -237,7 +269,7 @@ npx wrangler deploy --config api-worker/wrangler.jsonc
 - 카카오내비 앱은 실행되지만 사용자 기기에서 오류가 보고됐다. 좌표 순서와 WGS84 형식은 정상이다. 우선 확인할 항목은 JavaScript 키 종류, 카카오 개발자 콘솔의 JavaScript SDK 도메인 등록, 실제 앱 안의 오류 문구다.
 - 카카오 JavaScript SDK 도메인 후보: `https://gildam-trip.changuk83.chatgpt.site`
 - 인증이 없고 모든 접속자가 사용자 ID `1` 데이터를 공유하므로 실제 공개 서비스 전에 회원가입·로그인과 사용자별 권한 분리가 필수다.
-- 현재 상태 저장은 전체 삭제 후 재삽입 방식이다. 데이터가 커지거나 동시 사용이 생기면 증분 저장과 충돌 제어가 필요하다.
+- 현재 상태 저장은 전체 삭제 후 재삽입 방식이다. revision 기반 충돌 제어는 추가했지만 대규모 데이터용 증분 저장은 후속 과제다.
 - 클라이언트와 Worker 양쪽에 로컬용 API 구현이 있으므로 변경 시 동작 차이가 생기지 않게 함께 확인한다.
 - 기존 `README.md`는 vinext starter 설명이 대부분이므로 사용자용 README로 별도 정리할 여지가 있다.
 

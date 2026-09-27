@@ -56,7 +56,10 @@ test("keeps UI, domain state, and cloud sync split into dedicated modules", asyn
   assert.match(page, /from "\.\/hooks\/useCloudSync"/);
   assert.match(tripsHook, /const days = trips\.find/);
   assert.match(tripsHook, /const setDays: Dispatch<SetStateAction<DayPlan\[\]>>/);
-  assert.match(cloudHook, /fetch\(`\$\{apiBase\}\/api\/state`/);
+  assert.match(cloudHook, /await fetch\(/);
+  assert.match(cloudHook, /"\/api\/state"/);
+  assert.match(cloudHook, /expectedRevision: version\.current/);
+  assert.match(cloudHook, /"\/api\/schedule\/commands"/);
   assert.match(mapTypes, /type GoogleMapsApi/);
   assert.match(mapTypes, /type NaverMapsApi/);
   assert.doesNotMatch(page, /_sites-preview|SkeletonPreview/);

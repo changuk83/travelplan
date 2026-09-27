@@ -33,13 +33,20 @@ import { useCloudSync } from "./hooks/useCloudSync";
 import { useTrips } from "./hooks/useTrips";
 import { useDaySwipe } from "./hooks/useDaySwipe";
 import { useScheduleDrag } from "./hooks/useScheduleDrag";
+import TripAssistant from "./components/ai/TripAssistant";
+import type { AiRecommendation } from "./domain/ai";
+import { applyScheduleCommand } from "./domain/schedule-service";
+import type { ScheduleAction, ScheduleCommand } from "./domain/schedule";
+import { initialTrips } from "./domain/trip";
 
 export type { Place, RouteEndpoint } from "./domain/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const AI_API_BASE = process.env.NODE_ENV === "development" ? "" : API_BASE;
 const CURRENT_USER_ID = 1;
 
 export default function Home() {
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [tab, setTab] = useState<AppTab>("plan");
   const [savedSearchOpen, setSavedSearchOpen] = useState(false);
   const { trips, setTrips, activeTripId, setActiveTripId, tripsLoaded, days, setDays, activeDayId, setActiveDayId } =
@@ -67,7 +74,7 @@ export default function Home() {
   const activeDayIndex = days.findIndex((day) => day.id === activeDayId);
   const previousDay = activeDayIndex > 0 ? days[activeDayIndex - 1] : null;
   const nextDay = activeDayIndex >= 0 && activeDayIndex < days.length - 1 ? days[activeDayIndex + 1] : null;
-  const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0];
+  const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0] ?? initialTrips[0];
   const places = useMemo(() => activeDay?.places ?? [], [activeDay]);
   const mapPlaces = useMemo(
     () =>
@@ -143,7 +150,7 @@ export default function Home() {
       .sort((a, b) => (comparableDate(a.days[0]) ?? "").localeCompare(comparableDate(b.days[0]) ?? ""))[0];
     return closest ? [closest, ...trips.filter((trip) => trip.id !== closest.id)] : trips;
   }, [trips]);
-  useCloudSync({
+  const cloudSync = useCloudSync({
     apiBase: API_BASE,
     tripsLoaded,
     savedLoaded,
@@ -399,23 +406,59 @@ export default function Home() {
     return categorized;
   }
   function addPlace(place: Place) {
-    if (places.length >= 30) {
-      setSearchError("하루 경유지는 최대 30곳까지 추가할 수 있어요.");
+    const error = applyLocalCommand({
+      kind: "add_place",
+      tripId: activeTrip.id,
+      dayId: activeDayId,
+      place,
+      insertIndex: insertIndex ?? places.length,
+    });
+    if (error) {
+      setSearchError(error);
       return;
     }
-    if (places.some((item) => item.id === place.id)) return;
-    const categorized = saveForActiveTrip(place);
-    setPlaces((items) => {
-      const next = [...items];
-      next.splice(insertIndex ?? items.length, 0, categorized);
-      return next;
-    });
     setResults([]);
     setQuery("");
     if (insertIndex !== null) {
       setInsertIndex(null);
       setTab("plan");
     }
+  }
+  function addAiPlace(recommendation: AiRecommendation): string | null {
+    const error = applyLocalCommand({
+      kind: "add_place",
+      tripId: activeTrip.id,
+      dayId: recommendation.dayId,
+      place: recommendation.place,
+      insertIndex: recommendation.insertIndex,
+    });
+    if (error) return error;
+    setActiveDayId(recommendation.dayId);
+    setCandidatePreviews({});
+    return null;
+  }
+  function applyLocalCommand(command: ScheduleCommand): string | null {
+    const result = applyScheduleCommand({ trips, savedPlaces, savedCategories }, command);
+    if (result.error) return result.error;
+    setTrips(result.state.trips);
+    setSavedPlaces(result.state.savedPlaces);
+    setSavedCategories(result.state.savedCategories);
+    return null;
+  }
+  async function applyAiAction(action: ScheduleAction): Promise<string | null> {
+    const error = await cloudSync.applyCommand(action);
+    if (!error) {
+      setActiveTripId(action.command.tripId);
+      setActiveDayId(action.command.kind === "move_place" ? action.command.toDayId : action.command.dayId);
+      setCandidatePreviews({});
+      setLegs([]);
+    }
+    return error;
+  }
+  function saveAiPlace(place: Place): string | null {
+    if (savedPlaces.some((item) => item.id === place.id)) return "이미 내 장소에 저장되어 있어요.";
+    saveForActiveTrip(place);
+    return null;
   }
   function defaultRouteSavedCategory() {
     setRouteSavedCategory(savedCategories.includes(activeTrip.title) ? activeTrip.title : "전체");
@@ -473,23 +516,17 @@ export default function Home() {
   }
   function addCandidate(place: Place) {
     if (!candidateFor) return;
-    const main = activeDay.places.find((item) => item.id === candidateFor);
-    const existing = activeDay.candidates?.[candidateFor] ?? [];
-    if (!main || main.id === place.id || existing.some((item) => item.id === place.id)) return;
-    const categorized = saveForActiveTrip(place);
-    setDays((items) =>
-      items.map((day) =>
-        day.id === activeDayId
-          ? {
-              ...day,
-              candidates: {
-                ...(day.candidates ?? {}),
-                [candidateFor]: [...(day.candidates?.[candidateFor] ?? []), categorized],
-              },
-            }
-          : day,
-      ),
-    );
+    const error = applyLocalCommand({
+      kind: "add_candidate",
+      tripId: activeTrip.id,
+      dayId: activeDayId,
+      placeId: candidateFor,
+      candidate: place,
+    });
+    if (error) {
+      setSearchError(error);
+      return;
+    }
     setCandidateFor(null);
     setResults([]);
     setQuery("");
@@ -690,37 +727,66 @@ export default function Home() {
     setEditorError("");
   }
   function removePlace(id: string) {
+    const error = applyLocalCommand({ kind: "remove_place", tripId: activeTrip.id, dayId: activeDayId, placeId: id });
+    if (error) {
+      window.alert(error);
+      return;
+    }
     setCandidatePreviews((items) => {
       const next = { ...items };
       delete next[id];
       return next;
     });
-    setDays((items) =>
-      items.map((day) => {
-        if (day.id !== activeDayId) return day;
-        const index = day.places.findIndex((item) => item.id === id);
-        if (index < 0) return day;
-        const candidates = { ...(day.candidates ?? {}) };
-        const alternatives = candidates[id] ?? [];
-        if (alternatives.length) {
-          const [promoted, ...remaining] = alternatives;
-          const nextPlaces = [...day.places];
-          nextPlaces[index] = promoted;
-          delete candidates[id];
-          if (remaining.length) candidates[promoted.id] = remaining;
-          return { ...day, places: nextPlaces, candidates };
-        }
-        delete candidates[id];
-        return { ...day, places: day.places.filter((item) => item.id !== id), candidates };
-      }),
-    );
     setLegs([]);
   }
 
   return (
     <main className="app-shell">
       <AppHeader tab={tab} onManageCategories={manageSavedCategories} />
-      {tab === "plan" && (
+      {cloudSync.syncError && (
+        <div className="cloud-sync-notice" role="status">
+          <p>{cloudSync.syncError}</p>
+          <div>
+            {cloudSync.syncStatus !== "conflict" && (
+              <button
+                type="button"
+                onClick={() =>
+                  void cloudSync
+                    .flushPending()
+                    .catch((error: unknown) =>
+                      window.alert(error instanceof Error ? error.message : "저장하지 못했어요."),
+                    )
+                }
+              >
+                저장 재시도
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "이 기기에만 남은 수정 대신 서버의 최신 일정을 불러올까요? 현재 내용은 백업으로 보관합니다.",
+                  )
+                )
+                  return;
+                localStorage.setItem(
+                  "gildam-sync-draft-backup",
+                  JSON.stringify({ trips, savedPlaces, savedCategories, savedAt: Date.now() }),
+                );
+                void cloudSync
+                  .reloadCloud({ discardLocal: true })
+                  .catch((error: unknown) =>
+                    window.alert(error instanceof Error ? error.message : "불러오지 못했어요."),
+                  );
+              }}
+            >
+              서버 일정 불러오기
+            </button>
+          </div>
+        </div>
+      )}
+      {tab === "plan" && trips.length > 0 && (
         <section
           className={`page plan-page ${daySwipeAnimating ? "swipe-settling" : daySwipeOffset ? "swipe-dragging" : ""}`}
           style={
@@ -747,7 +813,22 @@ export default function Home() {
               tripRange={`${days[0]?.date}–${days[days.length - 1]?.date} · ${days.length}일 여행`}
             />
           )}
-          <TripHeader trip={activeTrip} days={days} activeDay={activeDay} />
+          <TripHeader
+            trip={activeTrip}
+            days={days}
+            activeDay={activeDay}
+            syncLabel={
+              cloudSync.syncError
+                ? "기기에 보관 중"
+                : cloudSync.syncStatus === "saving"
+                  ? "서버 저장 중"
+                  : cloudSync.syncStatus === "loading"
+                    ? "불러오는 중"
+                    : API_BASE
+                      ? "자동 저장"
+                      : "기기에 자동 저장"
+            }
+          />
           <DaySwitcher
             days={days}
             activeDayId={activeDayId}
@@ -757,6 +838,9 @@ export default function Home() {
             onRemove={removeDay}
           />
           <div className="map-pin-row">
+            <button type="button" className="ai-assistant-launch" onClick={() => setAssistantOpen(true)}>
+              AI에게 부탁하기
+            </button>
             <button
               type="button"
               className={mapPinned ? "active" : ""}
@@ -794,6 +878,20 @@ export default function Home() {
             onPreviewCandidate={previewCandidate}
           />
         </section>
+      )}
+      {assistantOpen && (
+        <TripAssistant
+          key={activeTrip.id}
+          trip={activeTrip}
+          trips={trips}
+          savedPlaces={savedPlaces}
+          activeDayId={activeDayId}
+          apiBase={AI_API_BASE}
+          onClose={() => setAssistantOpen(false)}
+          onAdd={addAiPlace}
+          onSave={saveAiPlace}
+          onApply={applyAiAction}
+        />
       )}
       {tab === "map" && (
         <PlaceSearchPage
@@ -835,7 +933,7 @@ export default function Home() {
           onOpenSavedPlaces={() => setTab("saved")}
         />
       )}
-      {tab === "trips" && (
+      {(tab === "trips" || (tab === "plan" && trips.length === 0)) && (
         <TripList
           trips={trips}
           displayedTrips={displayedTrips}
