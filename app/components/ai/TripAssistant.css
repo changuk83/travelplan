@@ -207,8 +207,69 @@
   color: #467256;
   font-size: 0.75rem;
 }
+.trip-ai-reputation {
+  margin: 12px 0;
+  padding: 10px 0;
+  border-top: 1px solid #e3ebe5;
+}
+.trip-ai-day-preview {
+  padding-left: 22px;
+}
+.trip-ai-day-preview li {
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.trip-ai-day-preview li > span {
+  font-size: 0.78rem;
+  color: #467256;
+}
+.trip-ai-day-preview li p {
+  color: #7a857e;
+  font-size: 0.78rem;
+}
+.trip-ai-reputation > button {
+  min-height: 44px;
+  border: 1px solid #cbdcd0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #f8fbf8;
+  color: #346044;
+}
+.trip-ai-reputation h4 {
+  font-size: 0.85rem;
+  margin: 10px 0;
+}
+.trip-ai-reputation-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.trip-ai-reputation-text a {
+  color: #287047;
+  text-decoration: underline;
+  font-size: 0.78rem;
+}
 .trip-ai-place-details p {
   margin: 4px 0 0;
+}
+.trip-ai-memo-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.trip-ai-card-fields textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid #cbdcd0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px;
+}
+.trip-ai-card-fields small {
+  color: #6b7c70;
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 .trip-ai-card-fields {
   display: grid;

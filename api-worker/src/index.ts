@@ -1,4 +1,6 @@
 import { handleAiChat } from "../../server/ai-assistant";
+import { sameRoutePoint, splitDrivingRoute } from "../../server/route-chunks";
+import { handlePlaceReputation } from "../../server/place-reputation";
 import { handleScheduleApi } from "./schedule-api";
 
 type Env = {
@@ -154,7 +156,7 @@ function routeCacheRequest(
   points: Array<{ longitude: number; latitude: number }>,
   scope?: { tripId?: string; dayId?: string; mode?: "schedule" | "preview" },
 ) {
-  const url = new URL("/__gildam-cache/routes/v2", request.url);
+  const url = new URL("/__gildam-cache/routes/v3", request.url);
   url.searchParams.set("user", DEFAULT_USER_ID);
   url.searchParams.set("trip", scope?.tripId ?? "unscoped");
   url.searchParams.set("day", scope?.dayId ?? "unscoped");
@@ -167,13 +169,11 @@ function routeCacheRequest(
   return new Request(url, { method: "GET" });
 }
 
-const samePoint = (a: { longitude: number; latitude: number }, b: { longitude: number; latitude: number }) =>
-  Math.abs(a.longitude - b.longitude) < 0.000001 && Math.abs(a.latitude - b.latitude) < 0.000001;
 function compactRoute(points: Array<{ longitude: number; latitude: number }>) {
   const compact = [points[0]];
   const duplicateLegs: boolean[] = [];
   for (let index = 1; index < points.length; index++) {
-    const duplicate = samePoint(points[index - 1], points[index]);
+    const duplicate = sameRoutePoint(points[index - 1], points[index]);
     duplicateLegs.push(duplicate);
     if (!duplicate) compact.push(points[index]);
   }
@@ -220,9 +220,7 @@ async function directions(request: Request, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(edgeCache.put(cacheRequest, response.clone()));
     return response;
   }
-  const chunks: Place[][] = [];
-  for (let index = 0; index < routePoints.length - 1; index += 6)
-    chunks.push(routePoints.slice(index, Math.min(index + 7, routePoints.length)) as Place[]);
+  const chunks = splitDrivingRoute(routePoints);
   const routes = await Promise.all(
     chunks.map(async (points) => {
       const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
@@ -241,7 +239,9 @@ async function directions(request: Request, env: Env, ctx: ExecutionContext) {
       });
       const data = (await response.json()) as NaverDirectionResponse;
       if (!response.ok) throw new Error(data.message || "경로를 계산하지 못했습니다.");
-      return data.route?.traoptimal?.[0];
+      const route = data.route?.traoptimal?.[0];
+      if (!route?.path?.length) throw new Error("경로를 계산하지 못했습니다.");
+      return route;
     }),
   );
   const path: number[][] = [];
@@ -523,7 +523,7 @@ export default {
       const url = new URL(request.url);
       let response: Response;
       if (url.pathname === "/health") response = json({ ok: true });
-      else if (url.pathname === "/api/ai/chat" && request.method === "POST") {
+      else if (["/api/ai/chat", "/api/ai/reputation"].includes(url.pathname) && request.method === "POST") {
         const origin = request.headers.get("origin");
         if (
           origin &&
@@ -535,19 +535,21 @@ export default {
         } else {
           response =
             (await enforceRateLimit(request, env.AI_RATE_LIMITER)) ??
-            (await handleAiChat(request, env, {
-              search: (params) => search(new Request(`${url.origin}/api/places/search?${params}`), env),
-              route: ({ scope, ...body }) =>
-                directions(
-                  new Request(`${url.origin}/api/routes`, {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ ...body, cacheScope: scope }),
-                  }),
-                  env,
-                  ctx,
-                ),
-            }));
+            (url.pathname === "/api/ai/reputation"
+              ? await handlePlaceReputation(request, env)
+              : await handleAiChat(request, env, {
+                  search: (params) => search(new Request(`${url.origin}/api/places/search?${params}`), env),
+                  route: ({ scope, ...body }) =>
+                    directions(
+                      new Request(`${url.origin}/api/routes`, {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ ...body, cacheScope: scope }),
+                      }),
+                      env,
+                      ctx,
+                    ),
+                }));
         }
       } else if (url.pathname === "/api/routes" && request.method === "POST")
         response = (await enforceRateLimit(request, env.ROUTE_RATE_LIMITER)) ?? (await directions(request, env, ctx));

@@ -9,6 +9,25 @@ const target = { tripId: text, dayId: text };
 /** Transport-independent metadata: future MCP adapters can reuse this registry. */
 export const scheduleTools = [
   {
+    name: "get_place_memo",
+    description:
+      "지정 일차의 경유지·후보 또는 내 장소에 등록된 장소의 현재 메모를 조회한다. 수정 전에 반드시 조회한다.",
+    properties: { ...target, placeId: text },
+    readOnly: true,
+  },
+  {
+    name: "update_place_memo",
+    description:
+      "등록된 장소 한 곳의 메모 추가/수정 확인 카드를 준비한다. memo는 변경 후 전체 내용이며 덧붙이려면 기존 내용을 유지한다. previousMemo는 조회한 원문이다. 해당 여행 내 동일 ID 장소와 내 장소에 반영하며 다른 여행은 변경하지 않는다.",
+    properties: {
+      ...target,
+      placeId: text,
+      memo: { type: "string", maxLength: 4000 },
+      previousMemo: { type: "string", maxLength: 4000 },
+    },
+    readOnly: false,
+  },
+  {
     name: "list_trips",
     description: "현재 제공된 여행 목록과 실제 여행 ID, 일차 ID를 조회한다.",
     properties: {},
@@ -25,6 +44,26 @@ export const scheduleTools = [
     description:
       "검색/이전 추천/저장 목록에서 확인한 placeId를 일정에 추가하는 확인 카드를 준비한다. 저장은 사용자 확인 후 실행된다. insertIndex는 0부터.",
     properties: { ...target, placeId: text, insertIndex: position },
+    readOnly: false,
+  },
+  {
+    name: "create_day_schedule",
+    description:
+      "사용자가 새 하루 코스를 요청했을 때만 사용한다. 경유지가 비어 있는 기존 일차에 확인된 장소들을 순서대로 일괄 등록하는 미리보기 한 건을 준비한다. 기존 장소/출발지/목적지는 변경하지 않는다. 저장은 사용자 확인 후 실행된다. 시간은 제안값이며 미정은 null.",
+    properties: {
+      ...target,
+      stops: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: { placeId: text, scheduledTime: { type: ["string", "null"] } },
+          required: ["placeId", "scheduledTime"],
+        },
+      },
+    },
     readOnly: false,
   },
   {
@@ -54,7 +93,7 @@ export const scheduleTools = [
   annotations: { readOnlyHint: readOnly, destructiveHint: !!destructive, openWorldHint: false },
 }));
 
-export function createScheduleTools(trips: TripPlan[], places: Map<string, Place>) {
+export function createScheduleTools(trips: TripPlan[], places: Map<string, Place>, savedPlaces: Place[] = []) {
   const actions: ScheduleAction[] = [];
   function execute(name: string, args: Record<string, unknown>): unknown {
     if (name === "list_trips")
@@ -68,6 +107,13 @@ export function createScheduleTools(trips: TripPlan[], places: Map<string, Place
     const trip = trips.find((item) => item.id === args.tripId);
     const day = trip?.days.find((item) => item.id === args.dayId);
     if (!trip || !day) return { error: "여행과 날짜 ID를 조회한 뒤 다시 지정하세요." };
+    const memoPlace = [...day.places, ...Object.values(day.candidates ?? {}).flat(), ...savedPlaces].find(
+      (place) => place.id === args.placeId,
+    );
+    if (name === "get_place_memo")
+      return memoPlace
+        ? { placeId: memoPlace.id, name: memoPlace.name, memo: memoPlace.memo ?? "" }
+        : { error: "등록된 장소를 찾을 수 없습니다. 먼저 일정이나 내 장소에 저장하세요." };
     if (name === "get_day_schedule")
       return {
         tripId: trip.id,
@@ -87,7 +133,36 @@ export function createScheduleTools(trips: TripPlan[], places: Map<string, Place
     const dayLabel = `${trip.title} · ${trip.days.indexOf(day) + 1}일차`;
     let command: ScheduleCommand;
     let label: string;
-    if (name === "add_schedule_place") {
+    if (name === "update_place_memo" && memoPlace) {
+      if (typeof args.memo !== "string" || typeof args.previousMemo !== "string")
+        return { error: "메모 내용을 확인하세요." };
+      command = {
+        ...base,
+        kind: "update_place_memo",
+        placeId: memoPlace.id,
+        memo: args.memo,
+        previousMemo: args.previousMemo,
+      };
+      label = `${dayLabel} · ${memoPlace.name} 메모 ${memoPlace.memo ? "수정" : "추가"}`;
+    } else if (name === "create_day_schedule") {
+      if (!Array.isArray(args.stops) || args.stops.length < 1 || args.stops.length > 30)
+        return { error: "하루 일정은 1~30곳으로 구성하세요." };
+      const stops: Extract<ScheduleCommand, { kind: "create_day_schedule" }>["stops"] = [];
+      for (const stop of args.stops) {
+        if (
+          !stop ||
+          typeof stop !== "object" ||
+          typeof stop.placeId !== "string" ||
+          (stop.scheduledTime !== null && typeof stop.scheduledTime !== "string")
+        )
+          return { error: "장소 ID와 시간을 확인하세요." };
+        const place = places.get(stop.placeId);
+        if (!place) return { error: "확인되지 않은 장소입니다. 실제 검색 결과의 placeId만 사용하세요." };
+        stops.push({ place, ...(stop.scheduledTime === null ? {} : { scheduledTime: stop.scheduledTime }) });
+      }
+      command = { ...base, kind: "create_day_schedule", stops };
+      label = `${dayLabel} · 새 하루 일정 ${stops.length}곳 등록`;
+    } else if (name === "add_schedule_place") {
       const place = typeof args.placeId === "string" ? places.get(args.placeId) : undefined;
       if (!place) return { error: "확인되지 않은 장소입니다. 먼저 검색하거나 제공된 장소 ID를 사용하세요." };
       command = { ...base, kind: "add_place", place, insertIndex: args.insertIndex as number };
@@ -111,7 +186,7 @@ export function createScheduleTools(trips: TripPlan[], places: Map<string, Place
       command = { ...base, kind: "add_candidate", placeId: existing.id, candidate };
       label = `${dayLabel} · ${existing.name}의 후보로 ${candidate.name} 추가`;
     } else return { error: "변경할 경유지를 찾을 수 없습니다. 현재 일정을 먼저 조회해 주세요." };
-    const checked = applyScheduleCommand({ trips, savedPlaces: [], savedCategories: [] }, command, trip.updatedAt);
+    const checked = applyScheduleCommand({ trips, savedPlaces, savedCategories: [] }, command, trip.updatedAt);
     if (checked.error) return { error: checked.error };
     const action = { id: crypto.randomUUID(), label, command, expectedTripUpdatedAt: trip.updatedAt };
     actions.push(action);

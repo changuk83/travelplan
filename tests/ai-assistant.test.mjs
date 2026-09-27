@@ -15,6 +15,7 @@ execFileSync(
   [
     path.join(root, "node_modules/typescript/bin/tsc"),
     "server/ai-assistant.ts",
+    "server/place-reputation.ts",
     "app/domain/ai-actions.ts",
     "app/domain/naver-place-url.ts",
     "--outDir",
@@ -34,11 +35,94 @@ execFileSync(
 const require = createRequire(import.meta.url);
 const { insertAiRecommendation } = require(path.join(output, "app/domain/ai-actions.js"));
 const { handleAiChat } = require(path.join(output, "server/ai-assistant.js"));
+const { handlePlaceReputation, parseReputation } = require(path.join(output, "server/place-reputation.js"));
+
+test("reputation keeps clickable citations and rejects unsourced or unsafe summaries", () => {
+  const output = (url) => [
+    {
+      type: "message",
+      content: [
+        {
+          type: "output_text",
+          text: "후기 내용 [1]",
+          annotations: [{ type: "url_citation", start_index: 6, end_index: 9, url, title: "방문 후기" }],
+        },
+      ],
+    },
+  ];
+  assert.equal(parseReputation(output("https://example.com/review")).status, "ok");
+  assert.equal(parseReputation(output("javascript:alert(1)")).status, "insufficient");
+  assert.equal(
+    parseReputation([{ type: "message", content: [{ type: "output_text", text: "맛집입니다", annotations: [] }] }])
+      .status,
+    "insufficient",
+  );
+});
+
+test("reputation validates requests and sends only place identity to web search", async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    calls++;
+    const body = JSON.parse(options.body);
+    assert.equal(body.tools[0].type, "web_search");
+    assert.equal(body.max_tool_calls, 2);
+    assert.deepEqual(JSON.parse(body.input), { name: "식당", address: "부산" });
+    return Response.json({ status: "completed", output: [] });
+  });
+  const req = (body) =>
+    new Request("https://example.com/api/ai/reputation", { method: "POST", body: JSON.stringify(body) });
+  assert.equal((await handlePlaceReputation(req({ name: "식당" }), { OPENAI_API_KEY: "test" })).status, 400);
+  assert.equal(calls, 0);
+  const response = await handlePlaceReputation(req({ name: "식당", address: "부산", memo: "private" }), {
+    OPENAI_API_KEY: "test",
+  });
+  assert.equal((await response.json()).status, "insufficient");
+  assert.equal(calls, 1);
+});
 const { naverPlaceUrl, naverPlaceAppUrl, naverMobilePlatform } = require(
   path.join(output, "app/domain/naver-place-url.js"),
 );
 const { distanceToRoute, sampleRoutePoints, isHighwayRestStop } = require(path.join(output, "server/ai-assistant.js"));
 const { createScheduleTools, scheduleTools } = require(path.join(output, "server/schedule-tools.js"));
+
+test("day creation uses known places and remains one confirmable action without weakening mutation limit", () => {
+  const p = { id: "p", name: "식당", category: "식당", address: "부산", longitude: 129, latitude: 35 };
+  const trips = [
+    {
+      id: "t",
+      title: "여행",
+      updatedAt: 1,
+      days: [{ id: "d", label: "1일차", date: "날짜 미정", start: p, goal: p, places: [] }],
+    },
+  ];
+  const registry = createScheduleTools(
+    trips,
+    new Map([
+      ["p", p],
+      ["q", { ...p, id: "q", name: "카페" }],
+    ]),
+  );
+  const unknown = registry.execute("create_day_schedule", {
+    tripId: "t",
+    dayId: "d",
+    stops: [{ placeId: "fake", scheduledTime: null }],
+  });
+  assert.ok(unknown.error);
+  assert.equal(registry.actions.length, 0);
+  const result = registry.execute("create_day_schedule", {
+    tripId: "t",
+    dayId: "d",
+    stops: [
+      { placeId: "p", scheduledTime: "12:00" },
+      { placeId: "q", scheduledTime: null },
+    ],
+  });
+  assert.equal(result.status, "awaiting_user_confirmation");
+  assert.equal(registry.actions.length, 1);
+  assert.equal(registry.actions[0].command.stops.length, 2);
+  assert.equal(trips[0].days[0].places.length, 0);
+  assert.ok(registry.execute("add_schedule_place", { tripId: "t", dayId: "d", placeId: "q", insertIndex: 0 }).error);
+});
 
 const place = {
   id: "restaurant-1",
@@ -674,6 +758,80 @@ test("model tools prepare prior recommendation addition with a mandatory confirm
   assert.notEqual(result.actions[0].id, "forged");
   assert.match(result.message, /확인/);
   assert.doesNotMatch(result.message, /저장 완료/);
+});
+
+test("AI day creation returns a single real batch preview and requires confirmation", async (t) => {
+  let calls = 0;
+  const other = { ...place, id: "cafe", name: "카페" };
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.ok(body.tools.some((tool) => tool.name === "create_day_schedule"));
+    calls++;
+    return Response.json({
+      status: "completed",
+      output:
+        calls === 1
+          ? [
+              {
+                type: "function_call",
+                call_id: "batch",
+                name: "create_day_schedule",
+                arguments: JSON.stringify({
+                  tripId: trip.id,
+                  dayId: "day-3",
+                  stops: [
+                    { placeId: place.id, scheduledTime: "12:00" },
+                    { placeId: other.id, scheduledTime: "14:00" },
+                  ],
+                }),
+              },
+            ]
+          : [
+              {
+                type: "message",
+                content: [
+                  {
+                    type: "output_text",
+                    text: JSON.stringify({ message: "완료", recommendationIds: [], placeDetails: [] }),
+                  },
+                ],
+              },
+            ],
+    });
+  });
+  const noCall = async () => assert.fail("known places require no search");
+  const response = await handleAiChat(
+    request({ message: "셋째날 새 하루 코스를 짜줘", availablePlaces: [place, other] }),
+    { OPENAI_API_KEY: "test" },
+    { search: noCall, route: noCall },
+  );
+  const result = await response.json();
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.actions[0].command.kind, "create_day_schedule");
+  assert.deepEqual(
+    result.actions[0].command.stops.map((stop) => stop.place.id),
+    [place.id, other.id],
+  );
+  assert.match(result.message, /확인/);
+  assert.deepEqual(result.recommendations, []);
+});
+
+test("memo tools show original text, reject unsaved recommendations, and keep single-action limit", () => {
+  const saved = { ...place, memo: "기존 메모" };
+  const registry = createScheduleTools([trip], new Map([[place.id, place]]), [saved]);
+  const args = { tripId: trip.id, dayId: "day-1", placeId: place.id };
+  assert.equal(registry.execute("get_place_memo", args).memo, "기존 메모");
+  assert.ok(registry.execute("update_place_memo", { ...args, previousMemo: "wrong", memo: "새 메모" }).error);
+  assert.equal(registry.actions.length, 0);
+  assert.equal(
+    registry.execute("update_place_memo", { ...args, previousMemo: "기존 메모", memo: "기존 메모\n예약" }).status,
+    "awaiting_user_confirmation",
+  );
+  assert.equal(registry.actions[0].command.previousMemo, "기존 메모");
+  assert.equal(saved.memo, "기존 메모");
+  assert.ok(registry.execute("add_schedule_place", { ...args, insertIndex: 0 }).error);
+  const unsaved = createScheduleTools([trip], new Map([[place.id, place]]));
+  assert.ok(unsaved.execute("update_place_memo", { ...args, previousMemo: "", memo: "x" }).error);
 });
 
 test("additional travel and known place context is bounded and validated", async () => {

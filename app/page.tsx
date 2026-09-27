@@ -2,8 +2,9 @@
 
 import { withScheduleTime, transferScheduleTime } from "./domain/place";
 import { useEffect, useMemo, useRef, useState } from "react";
-import NaverMap, { type RouteCacheScope, type RouteLeg } from "./NaverMap";
+import NaverMap, { type RouteCacheScope, type RouteLeg, type RouteStatus } from "./NaverMap";
 import DateRangePicker from "./components/DateRangePicker";
+import AppDialog from "./components/dialogs/AppDialog";
 import { CategoryManagerDialog, PlaceCategoryDialog, SaveCategoryDialog } from "./components/dialogs/CategoryDialogs";
 import SectionTitle from "./components/SectionTitle";
 import AppHeader from "./components/layout/AppHeader";
@@ -89,6 +90,7 @@ export default function Home() {
   const [candidateFor, setCandidateFor] = useState<string | null>(null);
   const [endpointTarget, setEndpointTarget] = useState<"start" | "goal" | null>(null);
   const [legs, setLegs] = useState<RouteLeg[]>([]);
+  const [routeStatus, setRouteStatus] = useState<RouteStatus>("loading");
   const savedPlacesRef = useRef<HTMLDivElement>(null);
   const activeDay = days.find((day) => day.id === activeDayId) ?? days[0];
   const activeDayIndex = days.findIndex((day) => day.id === activeDayId);
@@ -221,9 +223,9 @@ export default function Home() {
     return () => document.documentElement.classList.remove("saved-searching");
   }, [savedSearchOpen]);
   useEffect(() => {
-    document.documentElement.classList.toggle("map-pinned", mapPinned);
+    document.documentElement.classList.toggle("map-pinned", mapPinned && tab === "plan");
     return () => document.documentElement.classList.remove("map-pinned");
-  }, [mapPinned]);
+  }, [mapPinned, tab]);
   useEffect(() => {
     if (tab !== "map" || !choosingPlace) return;
     requestAnimationFrame(() => {
@@ -456,6 +458,13 @@ export default function Home() {
     if (error) return error;
     setActiveDayId(recommendation.dayId);
     setCandidatePreviews({});
+    setLegs([]);
+    setAssistantOpen(false);
+    setTab("plan");
+    setAddedPlace({
+      id: recommendation.place.id,
+      message: `${activeTrip.days.find((day) => day.id === recommendation.dayId)?.label ?? "일정"}에 ${recommendation.place.name} 추가했어요`,
+    });
     return null;
   }
   function applyLocalCommand(command: ScheduleCommand): string | null {
@@ -473,6 +482,24 @@ export default function Home() {
       setActiveDayId(action.command.kind === "move_place" ? action.command.toDayId : action.command.dayId);
       setCandidatePreviews({});
       setLegs([]);
+      if (action.command.kind === "create_day_schedule") {
+        setAssistantOpen(false);
+        setTab("plan");
+        setAddedPlace({
+          id: action.command.stops[0].place.id,
+          message: `새 하루 일정 ${action.command.stops.length}곳을 등록했어요`,
+        });
+      } else if (action.command.kind === "add_place" || action.command.kind === "add_candidate") {
+        setAssistantOpen(false);
+        setTab("plan");
+        setAddedPlace({
+          id: action.command.kind === "add_place" ? action.command.place.id : action.command.placeId,
+          message:
+            action.command.kind === "add_place"
+              ? `${action.command.place.name} 일정에 추가했어요`
+              : `${action.command.candidate.name} 후보로 추가했어요`,
+        });
+      }
     }
     return error;
   }
@@ -889,6 +916,7 @@ export default function Home() {
               start={activeDay.start}
               goal={activeDay.goal}
               onRouteData={setLegs}
+              onRouteStatus={setRouteStatus}
               cacheScope={routeCacheScope}
             />
           </div>
@@ -902,6 +930,7 @@ export default function Home() {
               setDays((items) => items.map((day) => (day.id === activeDayId ? withScheduleTime(day, key, time) : day)))
             }
             legs={legs}
+            routeStatus={routeStatus}
             dragIndex={dragIndex}
             onChooseEndpoint={chooseEndpoint}
             onChooseInsertion={chooseInsertion}
@@ -1049,134 +1078,103 @@ export default function Home() {
         />
       )}
       {tripCreator && (
-        <div
-          className="dialog-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setTripCreator(null);
-          }}
-        >
-          <section
-            className="app-dialog trip-creator-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="trip-creator-title"
-          >
-            <div className="dialog-title">
-              <div>
-                <span>새로운 일정</span>
-                <h2 id="trip-creator-title">새 여행 만들기</h2>
-              </div>
-              <button onClick={() => setTripCreator(null)} aria-label="닫기">
-                ×
-              </button>
+        <AppDialog titleId="trip-creator-title" className="trip-creator-dialog" onClose={() => setTripCreator(null)}>
+          <div className="dialog-title">
+            <div>
+              <span>새로운 일정</span>
+              <h2 id="trip-creator-title">새 여행 만들기</h2>
             </div>
-            <label className="trip-field">
-              <span>
-                여행 이름 <strong>필수</strong>
-              </span>
-              <input
-                value={tripCreator.title}
-                onChange={(event) => setTripCreator({ ...tripCreator, title: event.target.value, error: "" })}
-                maxLength={40}
-                placeholder="예: 강원도 가족 여행"
-              />
-            </label>
-            <DateRangePicker
-              startDate={tripCreator.startDate}
-              endDate={tripCreator.endDate}
-              onChange={(startDate, endDate) => setTripCreator({ ...tripCreator, startDate, endDate, error: "" })}
+            <button onClick={() => setTripCreator(null)} aria-label="닫기">
+              ×
+            </button>
+          </div>
+          <label className="trip-field">
+            <span>
+              여행 이름 <strong>필수</strong>
+            </span>
+            <input
+              value={tripCreator.title}
+              onChange={(event) => setTripCreator({ ...tripCreator, title: event.target.value, error: "" })}
+              maxLength={40}
+              placeholder="예: 강원도 가족 여행"
             />
-            {tripCreator.error && <p className="dialog-error">{tripCreator.error}</p>}
-            <div className="dialog-actions">
-              <button onClick={() => setTripCreator(null)}>취소</button>
-              <button className="dialog-primary" onClick={createTrip}>
-                여행 만들기
-              </button>
-            </div>
-          </section>
-        </div>
+          </label>
+          <DateRangePicker
+            startDate={tripCreator.startDate}
+            endDate={tripCreator.endDate}
+            onChange={(startDate, endDate) => setTripCreator({ ...tripCreator, startDate, endDate, error: "" })}
+          />
+          {tripCreator.error && <p className="dialog-error">{tripCreator.error}</p>}
+          <div className="dialog-actions">
+            <button onClick={() => setTripCreator(null)}>취소</button>
+            <button className="dialog-primary" onClick={createTrip}>
+              여행 만들기
+            </button>
+          </div>
+        </AppDialog>
       )}
       {dateEditor && (
-        <div
-          className="dialog-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setDateEditor(null);
-          }}
-        >
-          <section
-            className="app-dialog date-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="date-editor-title"
-          >
-            <div className="dialog-title">
-              <div>
-                <span>{days.find((day) => day.id === dateEditor.dayId)?.label}</span>
-                <h2 id="date-editor-title">여행 날짜 수정</h2>
-              </div>
-              <button onClick={() => setDateEditor(null)} aria-label="닫기">
-                ×
-              </button>
+        <AppDialog titleId="date-editor-title" className="date-dialog" onClose={() => setDateEditor(null)}>
+          <div className="dialog-title">
+            <div>
+              <span>{days.find((day) => day.id === dateEditor.dayId)?.label}</span>
+              <h2 id="date-editor-title">여행 날짜 수정</h2>
             </div>
-            <input
-              type="date"
-              value={dateEditor.value}
-              onChange={(event) => setDateEditor({ ...dateEditor, value: event.target.value })}
-            />
-            <p className="date-dialog-help">선택한 일차 이후의 날짜도 연속되도록 자동으로 변경됩니다.</p>
-            <div className="dialog-actions">
-              <button onClick={() => setDateEditor(null)}>취소</button>
-              <button className="dialog-primary" onClick={saveDayDate}>
-                날짜 저장
-              </button>
-            </div>
-          </section>
-        </div>
+            <button onClick={() => setDateEditor(null)} aria-label="닫기">
+              ×
+            </button>
+          </div>
+          <input
+            type="date"
+            aria-label="여행 날짜"
+            value={dateEditor.value}
+            onChange={(event) => setDateEditor({ ...dateEditor, value: event.target.value })}
+          />
+          <p className="date-dialog-help">선택한 일차 이후의 날짜도 연속되도록 자동으로 변경됩니다.</p>
+          <div className="dialog-actions">
+            <button onClick={() => setDateEditor(null)}>취소</button>
+            <button className="dialog-primary" onClick={saveDayDate}>
+              날짜 저장
+            </button>
+          </div>
+        </AppDialog>
       )}
       {editor && (
-        <div
-          className="dialog-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setEditor(null);
-          }}
-        >
-          <section className="app-dialog" role="dialog" aria-modal="true" aria-labelledby="text-editor-title">
-            <div className="dialog-title">
-              <div>
-                <span>{editor.kind === "memo" ? "방문 전에 기억할 정보" : "길담"}</span>
-                <h2 id="text-editor-title">{editor.title}</h2>
-              </div>
-              <button onClick={() => setEditor(null)} aria-label="닫기">
-                ×
-              </button>
+        <AppDialog titleId="text-editor-title" onClose={() => setEditor(null)}>
+          <div className="dialog-title">
+            <div>
+              <span>{editor.kind === "memo" ? "방문 전에 기억할 정보" : "길담"}</span>
+              <h2 id="text-editor-title">{editor.title}</h2>
             </div>
-            {editor.kind === "memo" ? (
-              <textarea
-                value={editor.value}
-                onChange={(event) => setEditor({ ...editor, value: event.target.value })}
-                placeholder="추천 메뉴, 주차 정보, 운영 시간 등을 기록하세요"
-                rows={5}
-              />
-            ) : (
-              <input
-                value={editor.value}
-                onChange={(event) => setEditor({ ...editor, value: event.target.value })}
-                maxLength={40}
-                placeholder={editor.kind.startsWith("category") ? "카테고리 이름" : "여행 이름"}
-              />
-            )}{" "}
-            {editorError && <p className="dialog-error">{editorError}</p>}
-            <div className="dialog-actions">
-              <button onClick={() => setEditor(null)}>취소</button>
-              <button className="dialog-primary" onClick={submitEditor}>
-                저장
-              </button>
-            </div>
-          </section>
-        </div>
+            <button onClick={() => setEditor(null)} aria-label="닫기">
+              ×
+            </button>
+          </div>
+          {editor.kind === "memo" ? (
+            <textarea
+              aria-label={editor.title}
+              value={editor.value}
+              onChange={(event) => setEditor({ ...editor, value: event.target.value })}
+              placeholder="추천 메뉴, 주차 정보, 운영 시간 등을 기록하세요"
+              rows={5}
+            />
+          ) : (
+            <input
+              aria-label={editor.title}
+              value={editor.value}
+              onChange={(event) => setEditor({ ...editor, value: event.target.value })}
+              maxLength={40}
+              placeholder={editor.kind.startsWith("category") ? "카테고리 이름" : "여행 이름"}
+            />
+          )}{" "}
+          {editorError && <p className="dialog-error">{editorError}</p>}
+          <div className="dialog-actions">
+            <button onClick={() => setEditor(null)}>취소</button>
+            <button className="dialog-primary" onClick={submitEditor}>
+              저장
+            </button>
+          </div>
+        </AppDialog>
       )}
       <BottomNavigation tab={tab} onChange={changeTab} />
     </main>

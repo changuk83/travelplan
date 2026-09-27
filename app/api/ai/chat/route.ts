@@ -7,7 +7,7 @@ import { POST as directions } from "../../routes/route";
 let windowStart = 0;
 let requestCount = 0;
 
-export async function POST(request: Request) {
+export function checkLocalAiRequest(request: Request): Response | null {
   if (process.env.NODE_ENV !== "development") {
     return Response.json({ error: "AI 도우미 연결을 확인해 주세요." }, { status: 503 });
   }
@@ -23,6 +23,13 @@ export async function POST(request: Request) {
   if (++requestCount > 5) {
     return Response.json({ error: "잠시 후 다시 질문해 주세요." }, { status: 429, headers: { "retry-after": "60" } });
   }
+  return null;
+}
+
+export async function POST(request: Request) {
+  const blocked = checkLocalAiRequest(request);
+  if (blocked) return blocked;
+  const origin = new URL(request.url).origin;
   return handleAiChat(
     request,
     {

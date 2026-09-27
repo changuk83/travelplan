@@ -2,7 +2,7 @@
 
 import PlaceNameLink from "../navigation/PlaceNameLink";
 import { Fragment, PointerEvent as ReactPointerEvent } from "react";
-import type { RouteLeg } from "../../NaverMap";
+import type { RouteLeg, RouteStatus } from "../../NaverMap";
 import type { DayPlan, Place } from "../../domain/types";
 import NavigationLinks from "../navigation/NavigationLinks";
 import ScheduleTimeField from "./ScheduleTimeField";
@@ -14,6 +14,7 @@ type Props = {
   day: DayPlan;
   onTimeChange: (key: string, time: string) => void;
   legs: RouteLeg[];
+  routeStatus?: RouteStatus;
   dragIndex: number | null;
   onChooseEndpoint: (target: "start" | "goal") => void;
   onChooseInsertion: (index: number) => void;
@@ -32,6 +33,7 @@ export default function ScheduleTimeline({
   day,
   onTimeChange,
   legs,
+  routeStatus,
   dragIndex,
   onChooseEndpoint,
   onChooseInsertion,
@@ -78,7 +80,7 @@ export default function ScheduleTimeline({
       {places.map((place, index) => (
         <Fragment key={place.id}>
           <div className="timeline-leg">
-            <LegSummary leg={legs[index]} />
+            <LegSummary leg={legs[index]} status={routeStatus} />
           </div>
           <ScheduleStop
             place={place}
@@ -103,7 +105,7 @@ export default function ScheduleTimeline({
       ))}
       {day.goal.name !== "목적지 미정" && (
         <div className="timeline-leg">
-          <LegSummary leg={legs[places.length]} />
+          <LegSummary leg={legs[places.length]} status={routeStatus} />
         </div>
       )}
       <article className="timeline-item fixed-stop">

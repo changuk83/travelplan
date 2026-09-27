@@ -182,6 +182,175 @@ function database() {
 }
 const post = (body) =>
   new Request("http://localhost/api/schedule/commands", { method: "POST", body: JSON.stringify(body) });
+
+test("memo update affects matching trip places and saved place but preserves unrelated trips and fields", () => {
+  const original = state();
+  original.savedPlaces = [place("main"), place("other")];
+  original.trips[0].days[1].places = [place("main")];
+  original.trips.push({ ...structuredClone(original.trips[0]), id: "other-trip" });
+  const before = structuredClone(original);
+  const result = applyScheduleCommand(
+    original,
+    command("update_place_memo", { placeId: "main", previousMemo: "추천 메뉴", memo: "추천 메뉴\n예약하기" }),
+    1,
+  );
+  assert.equal(result.error, null);
+  assert.equal(result.state.trips[0].days[1].places[0].memo, "추천 메뉴\n예약하기");
+  assert.equal(result.state.savedPlaces[0].memo, "추천 메뉴\n예약하기");
+  assert.deepEqual(result.state.trips[1], before.trips[1]);
+  assert.deepEqual(original, before);
+  assert.deepEqual(result.state.trips[0].days[0].candidates, before.trips[0].days[0].candidates);
+});
+
+test("memo update supports saved-only and candidates and rejects stale, missing, oversized values", () => {
+  const original = state();
+  original.savedPlaces = [place("saved-only")];
+  for (const id of ["candidate", "saved-only"]) {
+    const result = applyScheduleCommand(
+      original,
+      command("update_place_memo", { placeId: id, previousMemo: "추천 메뉴", memo: "새 메모" }),
+    );
+    assert.equal(result.error, null);
+    if (id === "candidate") assert.equal(result.state.trips[0].days[0].candidates.main[0].memo, "새 메모");
+    else assert.equal(result.state.savedPlaces[0].memo, "새 메모");
+  }
+  for (const values of [
+    { placeId: "missing", previousMemo: "추천 메뉴", memo: "x" },
+    { placeId: "main", previousMemo: "old", memo: "x" },
+    { placeId: "main", previousMemo: "추천 메뉴", memo: "x".repeat(4001) },
+  ]) {
+    const result = applyScheduleCommand(original, command("update_place_memo", values));
+    assert.ok(result.error);
+    assert.equal(result.state, original);
+  }
+});
+
+test("candidate registration retains entered memo in itinerary and saved places", () => {
+  const original = state();
+  const result = applyScheduleCommand(
+    original,
+    command("add_candidate", { placeId: "main", candidate: { ...place("recommended"), memo: "창가 자리 문의" } }),
+  );
+  assert.equal(result.error, null);
+  assert.equal(result.state.trips[0].days[0].candidates.main.at(-1).memo, "창가 자리 문의");
+  assert.equal(result.state.savedPlaces.find((p) => p.id === "recommended").memo, "창가 자리 문의");
+});
+
+test("HTTP memo command persists and replays without applying twice", async () => {
+  const db = database();
+  await writeState(db, "1", "device", state(), 0, "seed-memo");
+  const body = {
+    requestId: "memo",
+    expectedRevision: 1,
+    expectedTripUpdatedAt: 1,
+    command: command("update_place_memo", { placeId: "main", previousMemo: "추천 메뉴", memo: "예약 문의" }),
+  };
+  const response = await handleScheduleApi(post(body), db, "1", "device");
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.trips[0].days[0].places[0].memo, "예약 문의");
+  assert.deepEqual(await (await handleScheduleApi(post(body), db, "1", "device")).json(), data);
+});
+
+test("new day batch preserves endpoints and saves all places, categories and times atomically", () => {
+  const original = state();
+  const before = structuredClone(original);
+  const result = applyScheduleCommand(
+    original,
+    command("create_day_schedule", {
+      dayId: "d2",
+      stops: [
+        { place: place("lunch"), scheduledTime: "12:00" },
+        { place: place("cafe"), scheduledTime: "14:00" },
+      ],
+    }),
+    1,
+  );
+  assert.equal(result.error, null);
+  assert.deepEqual(original, before);
+  const day = result.state.trips[0].days[1];
+  assert.deepEqual(
+    day.places.map((p) => p.id),
+    ["lunch", "cafe"],
+  );
+  assert.equal(day.scheduleTimes["place:lunch"], "12:00");
+  assert.deepEqual(day.start, before.trips[0].days[1].start);
+  assert.deepEqual(day.goal, before.trips[0].days[1].goal);
+  assert.ok(result.state.savedPlaces.some((p) => p.id === "cafe" && p.savedCategories.includes("부산 여행")));
+});
+
+test("new day rejects existing itinerary, partial invalid batches, duplicate places, times and limits without changes", () => {
+  const original = state();
+  for (const extra of [
+    { dayId: "d1", stops: [{ place: place("new") }] },
+    { stops: [] },
+    { stops: null },
+    { stops: [null] },
+    { stops: [{ place: place("new") }, { place: { ...place("bad"), longitude: NaN } }] },
+    { stops: [{ place: place("new") }, { place: place("new") }] },
+    {
+      stops: [
+        { place: place("a"), scheduledTime: "14:00" },
+        { place: place("b"), scheduledTime: "12:00" },
+      ],
+    },
+    { stops: [{ place: place("a"), scheduledTime: "25:00" }] },
+    { stops: Array.from({ length: 31 }, (_, i) => ({ place: place(`p${i}`) })) },
+  ]) {
+    const before = structuredClone(original);
+    const result = applyScheduleCommand(original, command("create_day_schedule", { dayId: "d2", ...extra }));
+    assert.ok(result.error);
+    assert.equal(result.state, original);
+    assert.deepEqual(original, before);
+  }
+});
+
+test("HTTP day batch writes one revision, supports retries and rejects occupied days", async () => {
+  const db = database();
+  await writeState(db, "1", "device", state(), 0, "seed-batch");
+  const body = {
+    requestId: "batch",
+    expectedRevision: 1,
+    expectedTripUpdatedAt: 1,
+    command: command("create_day_schedule", { dayId: "d2", stops: [{ place: place("a") }, { place: place("b") }] }),
+  };
+  const response = await handleScheduleApi(post(body), db, "1", "device");
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.revision, 2);
+  assert.equal(result.trips[0].days[1].places.length, 2);
+  assert.deepEqual(await (await handleScheduleApi(post(body), db, "1", "device")).json(), result);
+  const occupied = {
+    ...body,
+    requestId: "batch-2",
+    expectedRevision: 2,
+    expectedTripUpdatedAt: result.trips[0].updatedAt,
+  };
+  assert.equal((await handleScheduleApi(post(occupied), db, "1", "device")).status, 409);
+  assert.equal((await readState(db, "1")).revision, 2);
+});
+
+test("HTTP invalid last stop never saves earlier batch entries", async () => {
+  const db = database();
+  await writeState(db, "1", "device", state(), 0, "seed-invalid-batch");
+  const before = await readState(db, "1");
+  const response = await handleScheduleApi(
+    post({
+      requestId: "bad-batch",
+      expectedRevision: 1,
+      expectedTripUpdatedAt: 1,
+      command: command("create_day_schedule", {
+        dayId: "d2",
+        stops: [{ place: place("valid") }, { place: { ...place("invalid"), latitude: 999 } }],
+      }),
+    }),
+    db,
+    "1",
+    "device",
+  );
+  assert.equal(response.status, 409);
+  assert.deepEqual(await readState(db, "1"), before);
+});
 test("HTTP command confirms once, replays exact result after later edit, rejects changed requestId payload", async () => {
   const db = database();
   await writeState(db, "1", "device", state(), 0, "seed");

@@ -1,6 +1,7 @@
 "use client";
 
 import ScheduleTimeField from "../schedule/ScheduleTimeField";
+import PlaceReputation from "./PlaceReputation";
 import PlaceNameLink from "../navigation/PlaceNameLink";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -29,8 +30,44 @@ function ActionCard({ action, onApply }: { action: ScheduleAction; onApply?: Pro
   const busy = useRef(false);
   return (
     <article className="trip-ai-card trip-ai-action-card">
-      <span className="trip-ai-category">일정 변경 확인</span>
+      <span className="trip-ai-category">
+        {action.command.kind === "create_day_schedule" ? "새 하루 일정 미리보기" : "일정 변경 확인"}
+      </span>
       <p>{action.label}</p>
+      {action.command.kind === "update_place_memo" && (
+        <div className="trip-ai-place-details">
+          <section>
+            <h4>현재 메모</h4>
+            <p className="trip-ai-memo-text">{action.command.previousMemo || "없음"}</p>
+          </section>
+          <section>
+            <h4>변경할 메모</h4>
+            <p className="trip-ai-memo-text">{action.command.memo || "메모 비우기"}</p>
+          </section>
+          <p>이 여행의 같은 장소와 내 장소 메모에 반영됩니다. 다른 여행은 변경하지 않습니다.</p>
+        </div>
+      )}
+      {action.command.kind === "create_day_schedule" && (
+        <>
+          <ol className="trip-ai-day-preview">
+            {action.command.stops.map((stop, index) => (
+              <li key={`${stop.place.id}-${index}`}>
+                <span>{stop.scheduledTime || "시간 미정"}</span>
+                <div>
+                  <strong>
+                    <PlaceNameLink place={stop.place} />
+                  </strong>
+                  <p>{stop.place.address}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="trip-ai-address">
+            출발지·목적지는 그대로 유지합니다. 시간은 제안이며 영업시간과 실제 이동시간은 방문 전에 확인해 주세요. 아래
+            버튼을 누르면 전체 장소가 함께 등록됩니다.
+          </p>
+        </>
+      )}
       {status === "done" || status === "cancelled" ? (
         <p role="status">{status === "done" ? "일정에 반영했어요 ✓" : "이 변경은 취소했어요."}</p>
       ) : (
@@ -58,7 +95,13 @@ function ActionCard({ action, onApply }: { action: ScheduleAction; onApply?: Pro
               }
             }}
           >
-            {status === "pending" ? "적용 중…" : action.command.kind === "remove_place" ? "삭제 확인" : "변경 적용"}
+            {status === "pending"
+              ? "적용 중…"
+              : action.command.kind === "remove_place"
+                ? "삭제 확인"
+                : action.command.kind === "create_day_schedule"
+                  ? "이 하루 일정 등록"
+                  : "변경 적용"}
           </button>
           <button type="button" disabled={status === "pending"} onClick={() => setStatus("cancelled")}>
             취소
@@ -76,11 +119,13 @@ function ActionCard({ action, onApply }: { action: ScheduleAction; onApply?: Pro
 }
 
 function RecommendationCard({
+  apiBase,
   recommendation,
   trip,
   onAdd,
   onSave,
-}: Pick<Props, "trip" | "onAdd" | "onSave"> & { recommendation: AiRecommendation }) {
+  onApply,
+}: Pick<Props, "trip" | "onAdd" | "onSave" | "onApply" | "apiBase"> & { recommendation: AiRecommendation }) {
   const [scheduledTime, setScheduledTime] = useState("");
   const [selectedDayId, setSelectedDayId] = useState(recommendation.dayId);
   const [insertIndex, setInsertIndex] = useState(recommendation.insertIndex);
@@ -88,10 +133,14 @@ function RecommendationCard({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [mode, setMode] = useState<"place" | "candidate">("place");
+  const [mainId, setMainId] = useState("");
+  const [memo, setMemo] = useState(recommendation.place.memo ?? "");
+  const candidateAction = useRef<ScheduleAction | null>(null);
   const busy = useRef(false);
   const day = trip.days.find((item) => item.id === selectedDayId) ?? trip.days[0];
   const position = day ? Math.max(0, Math.min(insertIndex, day.places.length)) : 0;
-  const place = recommendation.place;
+  const place = { ...recommendation.place, memo: memo.trim() };
 
   return (
     <article className="trip-ai-card">
@@ -113,8 +162,37 @@ function RecommendationCard({
         </section>
       </div>
       {recommendation.distanceLabel && <p className="trip-ai-distance">{recommendation.distanceLabel}</p>}
-      <ScheduleTimeField value={scheduledTime} onChange={setScheduledTime} disabled={pending || added} />
+      <PlaceReputation place={place} apiBase={apiBase} />
+      {mode === "place" && (
+        <ScheduleTimeField value={scheduledTime} onChange={setScheduledTime} disabled={pending || added} />
+      )}
       <div className="trip-ai-card-fields">
+        <label>
+          메모 (선택)
+          <textarea
+            value={memo}
+            maxLength={4000}
+            rows={2}
+            disabled={pending || added || saved}
+            placeholder="먹어볼 메뉴, 방문 시 참고할 점"
+            onChange={(event) => setMemo(event.target.value)}
+          />
+          <small>새로 등록하는 장소에 함께 저장됩니다. 기존 메모 수정은 AI에게 요청해 주세요.</small>
+        </label>
+        <label>
+          등록 방식
+          <select
+            value={mode}
+            disabled={pending || added}
+            onChange={(event) => {
+              setMode(event.target.value as "place" | "candidate");
+              setError("");
+            }}
+          >
+            <option value="place">일정에 추가</option>
+            <option value="candidate">기존 장소의 후보로 등록</option>
+          </select>
+        </label>
         <label>
           추가할 일정
           <select
@@ -122,6 +200,7 @@ function RecommendationCard({
             disabled={pending || added || !day}
             onChange={(event) => {
               setSelectedDayId(event.target.value);
+              setMainId("");
               setInsertIndex(trip.days.find((item) => item.id === event.target.value)?.places.length ?? 0);
               setError("");
             }}
@@ -133,43 +212,93 @@ function RecommendationCard({
             ))}
           </select>
         </label>
-        <label>
-          넣을 위치
-          <select
-            value={position}
-            disabled={pending || added || !day}
-            onChange={(event) => {
-              setInsertIndex(Number(event.target.value));
-              setError("");
-            }}
-          >
-            {day &&
-              Array.from({ length: day.places.length + 1 }, (_, index) => (
-                <option key={index} value={index}>
-                  {index === 0 ? day.start.name || "출발지" : day.places[index - 1].name}
-                  {" → 여기 → "}
-                  {index === day.places.length ? day.goal.name || "도착지" : day.places[index].name}
+        {mode === "candidate" ? (
+          <label>
+            어느 장소의 후보인가요?
+            <select
+              value={mainId}
+              disabled={pending || added || !day}
+              onChange={(event) => {
+                setMainId(event.target.value);
+                setError("");
+              }}
+            >
+              <option value="">대상 장소를 선택하세요</option>
+              {day?.places.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
                 </option>
               ))}
-          </select>
-        </label>
+            </select>
+            {!day?.places.length && <small>이 날짜에는 후보를 연결할 경유지가 없어요.</small>}
+          </label>
+        ) : (
+          <label>
+            넣을 위치
+            <select
+              value={position}
+              disabled={pending || added || !day}
+              onChange={(event) => {
+                setInsertIndex(Number(event.target.value));
+                setError("");
+              }}
+            >
+              {day &&
+                Array.from({ length: day.places.length + 1 }, (_, index) => (
+                  <option key={index} value={index}>
+                    {index === 0 ? day.start.name || "출발지" : day.places[index - 1].name}
+                    {" → 여기 → "}
+                    {index === day.places.length ? day.goal.name || "도착지" : day.places[index].name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
       </div>
       <div className="trip-ai-card-actions">
         <button
           type="button"
           className="trip-ai-primary"
-          disabled={pending || added || !day}
+          disabled={pending || added || !day || (mode === "candidate" && (!mainId || !onApply))}
           onClick={async () => {
             if (!day || added || busy.current) return;
             busy.current = true;
             setPending(true);
             try {
-              const result = await onAdd({
-                ...recommendation,
-                dayId: day.id,
-                insertIndex: position,
-                scheduledTime: scheduledTime || undefined,
-              });
+              let result: string | null;
+              if (mode === "candidate") {
+                const main = day.places.find((item) => item.id === mainId);
+                if (!main || !onApply) {
+                  setError("후보를 연결할 장소를 선택해 주세요.");
+                  return;
+                }
+                const command = {
+                  kind: "add_candidate" as const,
+                  tripId: trip.id,
+                  dayId: day.id,
+                  placeId: main.id,
+                  candidate: place,
+                };
+                if (
+                  !candidateAction.current ||
+                  JSON.stringify(candidateAction.current.command) !== JSON.stringify(command)
+                ) {
+                  candidateAction.current = {
+                    id: crypto.randomUUID(),
+                    command,
+                    label: `${main.name}의 후보로 ${place.name} 등록`,
+                    expectedTripUpdatedAt: trip.updatedAt,
+                  };
+                }
+                result = await onApply(candidateAction.current);
+              } else
+                result = await onAdd({
+                  ...recommendation,
+                  place,
+                  dayId: day.id,
+                  insertIndex: position,
+                  scheduledTime: scheduledTime || undefined,
+                });
               setError(result ?? "");
               if (!result) setAdded(true);
             } catch {
@@ -180,7 +309,7 @@ function RecommendationCard({
             }
           }}
         >
-          {added ? "일정에 추가됨 ✓" : "일정에 추가"}
+          {added ? "등록됨 ✓" : mode === "candidate" ? "선택한 장소의 후보로 등록" : "일정에 추가"}
         </button>
         <button
           type="button"
@@ -395,7 +524,9 @@ export default function TripAssistant({
               <div className="trip-ai-suggestions">
                 {[
                   `${dayIndex >= 0 ? dayIndex + 1 : 1}일차에 들를 식당 추천해줘`,
-                  `${dayIndex >= 0 ? dayIndex + 1 : 1}일차 이동 경로에 들를 곳을 찾아줘`,
+                  dayIndex >= 0 && trip.days[dayIndex].places.length === 0
+                    ? `${dayIndex + 1}일차 하루 코스를 새로 짜줘. 식사와 관광을 포함해줘`
+                    : `${dayIndex >= 0 ? dayIndex + 1 : 1}일차 이동 경로에 들를 곳을 찾아줘`,
                   "현재 여행 일정 보여줘",
                 ].map((prompt) => (
                   <button
@@ -428,9 +559,11 @@ export default function TripAssistant({
                 <RecommendationCard
                   key={`${recommendation.place.id}-${index}`}
                   recommendation={recommendation}
+                  apiBase={apiBase}
                   trip={trip}
                   onAdd={onAdd}
                   onSave={onSave}
+                  onApply={onApply}
                 />
               ))}
             </section>

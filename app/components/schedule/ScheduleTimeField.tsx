@@ -65,7 +65,7 @@ export default function ScheduleTimeField({
             </span>
           )}
         </button>
-        {value && !editing && (
+        {value && !editing && !compact && (
           <button
             className="schedule-time-clear"
             type="button"
@@ -120,6 +120,19 @@ export default function ScheduleTimeField({
               취소
             </button>
           </div>
+          {compact && value && (
+            <button
+              className="schedule-time-editor-clear"
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                onChange("");
+                close();
+              }}
+            >
+              시간 지우기
+            </button>
+          )}
         </div>
       )}
     </div>

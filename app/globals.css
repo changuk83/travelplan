@@ -3917,7 +3917,7 @@ body:has(.google-test-shell) .google-test-shortcut {
   font-size: 10px;
 }
 .calm-timeline .schedule-time-summary {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0;
 }
 .calm-timeline .schedule-time-chip {
@@ -3997,14 +3997,38 @@ body:has(.google-test-shell) .google-test-shortcut {
   flex-basis: 100%;
 }
 .calm-timeline .drag-handle {
-  position: absolute;
-  left: 5px;
-  top: 74px;
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
   width: 32px;
   height: 32px;
   margin: 0;
   color: #a8b4ac;
   font-size: 18px;
+}
+.calm-timeline .candidate-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding-right: 28px;
+  margin: -6px 0 4px -6px;
+}
+.calm-timeline .candidate-heading .candidate-kind {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.schedule-time-field .schedule-time-editor-clear {
+  margin-top: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  color: #738278;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .calm-timeline h3 {
   font-size: 16px;
@@ -4132,4 +4156,320 @@ body:has(.google-test-shell) .google-test-shortcut {
 }
 .map-pinned .calm-timeline {
   padding-top: 12px;
+}
+
+/* UI audit fixes: reserve real scrolling space and keep destructive controls separate. */
+.plan-map > .day-controls {
+  position: absolute;
+  z-index: 8;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #ffffffa6;
+  border-radius: 14px;
+  background: #f8fcf8e6;
+}
+.day-controls .day-switcher {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+.day-controls .day-tab {
+  flex: 0 0 80px;
+  min-height: 44px;
+  background: #ffffffb3;
+}
+.day-controls .day-tab.active {
+  background: var(--green);
+}
+.day-controls .day-select {
+  min-height: 44px;
+  padding: 8px 10px 8px 18px;
+}
+.day-controls .day-select span {
+  position: relative;
+  margin: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.day-controls .active .day-select span {
+  color: white;
+}
+.day-controls .active .day-background-number {
+  color: white;
+  opacity: 0.25;
+}
+.day-controls .add-day {
+  flex: 0 0 44px;
+  min-height: 44px;
+}
+.day-actions {
+  flex: 0 0 44px;
+}
+.day-menu-trigger {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: var(--green);
+  font-size: 24px;
+  cursor: pointer;
+}
+.day-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(240px, calc(100vw - 48px));
+  padding: 8px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px #16362330;
+}
+.day-action-menu p {
+  margin: 4px 8px;
+  color: #536159;
+  font-size: 12px;
+}
+.day-action-menu button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: white;
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+}
+.day-action-menu button:hover,
+.day-action-menu button:focus-visible {
+  background: #edf5ef;
+}
+.day-action-menu .danger {
+  color: #a8483a;
+}
+.day-action-menu button:disabled {
+  color: #89948d;
+  cursor: default;
+}
+.day-action-menu small {
+  display: block;
+  padding: 4px 8px;
+  color: #536159;
+  font-size: 12px;
+}
+.plan-page .plan-map {
+  overflow: visible;
+  z-index: 5;
+}
+.plan-map .real-map {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.map-pinned .app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  padding-bottom: 0;
+}
+.map-pinned .app-header,
+.map-pinned .bottom-nav {
+  flex: 0 0 auto;
+}
+.map-pinned .bottom-nav {
+  position: relative !important;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+}
+.map-pinned .plan-page {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.map-pinned .plan-page > .timeline {
+  min-height: 160px;
+}
+.map-pinned .trip-overview .map-pin-row {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+.map-pinned .plan-page > .section-heading {
+  margin-top: 0;
+  padding: 10px 16px 6px;
+}
+.map-pinned .plan-page > .section-heading p {
+  margin-bottom: 0;
+}
+.map-pinned .plan-page > .section-heading span {
+  font-size: 12px;
+}
+@media (max-height: 700px) {
+  .map-pinned .app-header {
+    min-height: 40px;
+    height: auto;
+    padding: 4px 16px;
+  }
+  .map-pinned .app-header .overline {
+    display: none;
+  }
+  .map-pinned .app-header h1 {
+    font-size: 24px;
+  }
+  .map-pinned .trip-overview {
+    margin: 4px 16px 0;
+  }
+  .map-pinned .plan-map {
+    margin-top: 6px;
+  }
+  .map-pinned .plan-map .real-map,
+  .map-pinned .plan-map .naver-map,
+  .map-pinned .plan-map .map-canvas,
+  .map-pinned .swipe-preview-map {
+    height: clamp(110px, 27dvh, 170px);
+  }
+  .map-pinned .plan-page > .section-heading span {
+    display: none;
+  }
+  .map-pinned .plan-page > .section-heading {
+    padding-top: 6px;
+  }
+  .map-pinned .swipe-preview-heading {
+    margin-top: 0;
+    padding: 6px 16px;
+  }
+  .map-pinned .swipe-preview-heading > span {
+    display: none;
+  }
+}
+@media (max-height: 440px) {
+  .map-pinned .app-header {
+    display: none;
+  }
+  .map-pinned .plan-page {
+    overflow-y: auto;
+  }
+  .map-pinned .plan-page > .timeline {
+    flex-shrink: 0;
+  }
+}
+
+.place-picker .rest-card:has(.schedule-time-field) {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+.place-picker .rest-card:has(.schedule-time-field) .place-picker-selection {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.place-picker .schedule-time-editor-row {
+  flex-wrap: wrap;
+}
+.place-picker .rest-copy {
+  overflow-wrap: anywhere;
+}
+.app-dialog:focus {
+  outline: none;
+}
+.trips-page .trip-delete {
+  width: 44px;
+  height: 44px;
+  top: 2px;
+  right: 2px;
+}
+.trips-page .trip-title-row {
+  padding-right: 32px;
+  align-items: center;
+}
+.trip-rename {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+}
+.place-category-chips {
+  gap: 8px;
+}
+.place-category-chips > span {
+  min-height: 44px;
+  padding: 0 0 0 10px;
+  font-size: 11px;
+}
+.place-category-chips > span button {
+  width: 44px;
+  height: 44px;
+  background: radial-gradient(circle, #cae6d5 7px, transparent 8px);
+}
+.place-category-add {
+  min-height: 44px;
+  font-size: 11px !important;
+}
+.candidate-dots {
+  gap: 0;
+}
+.candidate-dots button,
+.candidate-dots button.active {
+  width: 32px;
+  height: 44px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
+.candidate-dots button::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: #cbd6cf;
+}
+.candidate-dots button.active::after {
+  width: 16px;
+  background: var(--green);
+}
+.calm-timeline .candidate-controls {
+  min-height: 44px;
+}
+.calm-timeline p {
+  font-size: 12px;
+  color: #626f66;
+}
+.calm-timeline .candidate-kind {
+  font-size: 11px;
+  color: #626f66;
+}
+.calm-timeline .candidate-slide > p:not(.place-memo),
+.calm-timeline .stop-card > p {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.trips-page .trip-card > p,
+.trips-page .trip-meta span,
+.trips-page .trip-status {
+  font-size: 11px;
+}
+.rest-copy p,
+.rest-copy span {
+  font-size: 12px;
+}
+
+@media (min-width: 700px) {
+  .map-pinned .app-shell {
+    height: calc(100dvh - 48px);
+  }
 }

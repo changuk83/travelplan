@@ -46,6 +46,27 @@ export default function ScheduleStop({
   const trackRef = useRef<HTMLDivElement>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const slideCount = alternatives.length + 1;
+  const dragHandle = (
+    <button
+      type="button"
+      className="drag-handle"
+      onPointerDown={(event) => onBeginDrag(index, event)}
+      onPointerMove={onContinueDrag}
+      onPointerUp={onEndDrag}
+      onPointerCancel={onEndDrag}
+      aria-label={`${place.name} 순서 끌기`}
+      title="끌어서 순서 변경"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        {[4, 8, 12].map((y) => (
+          <g key={y}>
+            <circle cx="5" cy={y} r="1" />
+            <circle cx="11" cy={y} r="1" />
+          </g>
+        ))}
+      </svg>
+    </button>
+  );
   function goToSlide(target: number) {
     const next = Math.max(0, Math.min(target, slideCount - 1));
     const element = trackRef.current?.children.item(next) as HTMLElement | null;
@@ -62,16 +83,6 @@ export default function ScheduleStop({
       <div className="schedule-time-rail">
         <ScheduleTimeField compact label="방문 예정 시간" value={scheduledTime} onChange={onTimeChange} />
       </div>
-      <button
-        className="drag-handle"
-        onPointerDown={(event) => onBeginDrag(index, event)}
-        onPointerMove={onContinueDrag}
-        onPointerUp={onEndDrag}
-        onPointerCancel={onEndDrag}
-        aria-label={`${place.name} 순서 끌기`}
-      >
-        ≡
-      </button>
       <div className="stop-dot">{index + 1}</div>
       <div className="candidate-carousel">
         <div
@@ -105,7 +116,10 @@ export default function ScheduleStop({
             >
               ×
             </button>
-            <span className="candidate-kind">메인 · 1/{slideCount}</span>
+            <div className="candidate-heading">
+              {dragHandle}
+              <span className="candidate-kind">메인 · 1/{slideCount}</span>
+            </div>
             <div className="stop-title-row">
               <h3>
                 <PlaceNameLink place={place} />
@@ -140,9 +154,12 @@ export default function ScheduleStop({
               >
                 ×
               </button>
-              <span className="candidate-kind">
-                후보 {i + 1} · {i + 2}/{slideCount}
-              </span>
+              <div className="candidate-heading">
+                {dragHandle}
+                <span className="candidate-kind">
+                  후보 {i + 1} · {i + 2}/{slideCount}
+                </span>
+              </div>
               <div className="stop-title-row">
                 <h3>
                   <PlaceNameLink place={candidate} />

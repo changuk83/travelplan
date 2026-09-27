@@ -3,17 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import type { Place, RouteEndpoint } from "./domain/types";
 import type { NaverMapInstance, NaverOverlay } from "./lib/map-sdk-types";
+import {
+  currentMapPath,
+  mapRouteKey,
+  validMapPath,
+  type MapRouteSnapshot,
+  type MapRouteScope,
+} from "./domain/map-route";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export type RouteLeg = { distance: number; duration: number };
-export type RouteCacheScope = { userId: number; tripId: string; dayId: string; mode: "schedule" | "preview" };
+export type RouteStatus = "loading" | "ready" | "error" | "pending";
+export type RouteCacheScope = MapRouteScope;
 
 export default function NaverMap({
   places,
   start,
   goal,
   onRouteData,
+  onRouteStatus,
   cacheScope,
   topInset = 0,
 }: {
@@ -21,6 +30,7 @@ export default function NaverMap({
   start: RouteEndpoint;
   goal: RouteEndpoint;
   onRouteData?: (legs: RouteLeg[]) => void;
+  onRouteStatus?: (status: RouteStatus) => void;
   cacheScope?: RouteCacheScope;
   topInset?: number;
 }) {
@@ -29,44 +39,63 @@ export default function NaverMap({
   const mapInstance = useRef<NaverMapInstance | null>(null);
   const fitRoute = useRef<(() => void) | null>(null);
   const [failed, setFailed] = useState(false);
-  const [path, setPath] = useState<number[][]>([]);
+  const [route, setRoute] = useState<MapRouteSnapshot | null>(null);
+  const requestKey = mapRouteKey(start, goal, places, cacheScope);
+  // Hide obsolete geometry during render, before a replacement request can finish.
+  const path = currentMapPath(route, requestKey);
   const key = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
   const goalPending = goal.name === "목적지 미정";
 
   useEffect(() => {
+    const resetFrame = requestAnimationFrame(() => {
+      onRouteData?.([]);
+      onRouteStatus?.(goalPending ? "pending" : "loading");
+    });
     if (goalPending) {
-      const frame = requestAnimationFrame(() => {
-        setPath([[start.longitude, start.latitude]]);
-        onRouteData?.([]);
-      });
-      return () => cancelAnimationFrame(frame);
+      return () => cancelAnimationFrame(resetFrame);
     }
     let cancelled = false;
+    const controller = new AbortController();
     fetch(`${API_BASE}/api/routes`, {
       method: "POST",
+      signal: controller.signal,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ waypoints: places, start, goal, cacheScope }),
+      body: requestKey,
     })
       .then(async (response) => {
         if (!response.ok) throw new Error("Route request failed");
         return (await response.json()) as { path?: number[][]; legs?: RouteLeg[] };
       })
       .then((data: { path?: number[][]; legs?: RouteLeg[] }) => {
-        if (!cancelled && data.path?.length) {
-          setPath(data.path);
-          onRouteData?.(data.legs ?? []);
+        if (!cancelled) {
+          cancelAnimationFrame(resetFrame);
+          const nextPath = validMapPath(data.path);
+          setRoute({ key: requestKey, path: nextPath });
+          onRouteData?.(nextPath.length ? (data.legs ?? []) : []);
+          onRouteStatus?.(nextPath.length ? "ready" : "error");
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) {
+          cancelAnimationFrame(resetFrame);
+          setRoute({ key: requestKey, path: [] });
+          onRouteData?.([]);
+          onRouteStatus?.("error");
+        }
+      });
     return () => {
       cancelled = true;
+      controller.abort();
+      cancelAnimationFrame(resetFrame);
     };
-  }, [places, start, goal, goalPending, onRouteData, cacheScope]);
+  }, [requestKey, goalPending, onRouteData, onRouteStatus]);
 
   useEffect(() => {
     if (!key || !mapRef.current) return;
+    let disposed = false;
+    let fitFrame = 0;
     const draw = () => {
-      if (!window.naver || !mapRef.current) return;
+      if (disposed || !window.naver || !mapRef.current) return;
       const { maps } = window.naver;
       const compact = mapRef.current.clientHeight < 250;
       const map =
@@ -125,25 +154,42 @@ export default function NaverMap({
             ? { top: Math.max(24, topInset), right: 24, bottom: 34, left: 24 }
             : { top: Math.max(70, topInset), right: 42, bottom: 56, left: 42 },
         );
-      requestAnimationFrame(() => fitRoute.current?.());
+      fitFrame = requestAnimationFrame(() => {
+        if (!disposed) fitRoute.current?.();
+      });
     };
-
+    const onError = () => {
+      if (!disposed) setFailed(true);
+    };
+    let script: HTMLScriptElement | null = null;
+    const cleanup = () => {
+      disposed = true;
+      cancelAnimationFrame(fitFrame);
+      script?.removeEventListener("load", draw);
+      script?.removeEventListener("error", onError);
+      overlays.current.forEach((item) => item.setMap(null));
+      overlays.current = [];
+      fitRoute.current = null;
+    };
     if (window.naver) {
       draw();
-      return;
+      return cleanup;
     }
     const existing = document.getElementById("naver-map-script") as HTMLScriptElement | null;
     if (existing) {
+      script = existing;
       existing.addEventListener("load", draw, { once: true });
-      return;
+      existing.addEventListener("error", onError, { once: true });
+      return cleanup;
     }
-    const script = document.createElement("script");
+    script = document.createElement("script");
     script.id = "naver-map-script";
     script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(key)}`;
     script.async = true;
-    script.onload = draw;
-    script.onerror = () => setFailed(true);
+    script.addEventListener("load", draw, { once: true });
+    script.addEventListener("error", onError, { once: true });
     document.head.appendChild(script);
+    return cleanup;
   }, [key, path, places, start, goal, goalPending, topInset]);
 
   if (!key || failed)

@@ -1,3 +1,4 @@
+import { sameRoutePoint, splitDrivingRoute } from "../../../server/route-chunks";
 type Point = { longitude: number; latitude: number };
 type NaverRoute = {
   path?: number[][];
@@ -8,11 +9,10 @@ type RouteCacheScope = { userId?: number; tripId?: string; dayId?: string; mode?
 type CloudflareCacheStorage = CacheStorage & { default: Cache };
 
 const MAX_WAYPOINTS = 30;
-const WAYPOINTS_PER_REQUEST = 5;
 const ROUTE_CACHE_SECONDS = 60 * 60 * 6;
 
 function routeCacheRequest(request: Request, points: Point[], scope?: RouteCacheScope) {
-  const url = new URL("/__gildam-cache/routes/v1", request.url);
+  const url = new URL("/__gildam-cache/routes/v3", request.url);
   url.searchParams.set("option", "traoptimal");
   url.searchParams.set("user", String(scope?.userId ?? "shared"));
   url.searchParams.set("trip", scope?.tripId ?? "unscoped");
@@ -23,15 +23,6 @@ function routeCacheRequest(request: Request, points: Point[], scope?: RouteCache
     points.map((point) => `${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`).join("|"),
   );
   return new Request(url, { method: "GET" });
-}
-
-function splitRoute(start: Point, waypoints: Point[], goal: Point) {
-  const points = [start, ...waypoints, goal];
-  const chunks: Point[][] = [];
-  for (let index = 0; index < points.length - 1; index += WAYPOINTS_PER_REQUEST + 1) {
-    chunks.push(points.slice(index, Math.min(index + WAYPOINTS_PER_REQUEST + 2, points.length)));
-  }
-  return chunks;
 }
 
 function routeLegs(route: NaverRoute) {
@@ -51,13 +42,11 @@ function routeLegs(route: NaverRoute) {
   return legs;
 }
 
-const samePoint = (a: Point, b: Point) =>
-  Math.abs(a.longitude - b.longitude) < 0.000001 && Math.abs(a.latitude - b.latitude) < 0.000001;
 function compactRoute(points: Point[]) {
   const compact = [points[0]];
   const duplicateLegs: boolean[] = [];
   for (let index = 1; index < points.length; index++) {
-    const duplicate = samePoint(points[index - 1], points[index]);
+    const duplicate = sameRoutePoint(points[index - 1], points[index]);
     duplicateLegs.push(duplicate);
     if (!duplicate) compact.push(points[index]);
   }
@@ -113,7 +102,7 @@ export async function POST(request: Request) {
       return response;
     }
     const responses = await Promise.all(
-      splitRoute(routePoints[0], routePoints.slice(1, -1), routePoints.at(-1)!).map(async (points) => {
+      splitDrivingRoute(routePoints).map(async (points) => {
         const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
         url.searchParams.set("start", `${points[0].longitude},${points[0].latitude}`);
         url.searchParams.set("goal", `${points.at(-1)!.longitude},${points.at(-1)!.latitude}`);
@@ -129,7 +118,9 @@ export async function POST(request: Request) {
         });
         const data = (await response.json()) as { route?: { traoptimal?: NaverRoute[] }; message?: string };
         if (!response.ok) throw new Error(data.message || "경로를 계산하지 못했습니다.");
-        return data.route?.traoptimal?.[0];
+        const route = data.route?.traoptimal?.[0];
+        if (!route?.path?.length) throw new Error("경로를 계산하지 못했습니다.");
+        return route;
       }),
     );
     const path: number[][] = [];
