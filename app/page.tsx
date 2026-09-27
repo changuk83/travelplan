@@ -1,5 +1,6 @@
 "use client";
 
+import { withScheduleTime, transferScheduleTime } from "./domain/place";
 import { useEffect, useMemo, useRef, useState } from "react";
 import NaverMap, { type RouteCacheScope, type RouteLeg } from "./NaverMap";
 import DateRangePicker from "./components/DateRangePicker";
@@ -405,13 +406,14 @@ export default function Home() {
     });
     return categorized;
   }
-  function addPlace(place: Place) {
+  function addPlace(place: Place, scheduledTime?: string) {
     const error = applyLocalCommand({
       kind: "add_place",
       tripId: activeTrip.id,
       dayId: activeDayId,
       place,
       insertIndex: insertIndex ?? places.length,
+      scheduledTime,
     });
     if (error) {
       setSearchError(error);
@@ -431,6 +433,7 @@ export default function Home() {
       dayId: recommendation.dayId,
       place: recommendation.place,
       insertIndex: recommendation.insertIndex,
+      scheduledTime: recommendation.scheduledTime,
     });
     if (error) return error;
     setActiveDayId(recommendation.dayId);
@@ -493,7 +496,7 @@ export default function Home() {
     setQuery("");
     setTab("map");
   }
-  function setEndpoint(place: Place) {
+  function setEndpoint(place: Place, scheduledTime?: string) {
     if (!endpointTarget) return;
     saveForActiveTrip(place);
     const target = endpointTarget;
@@ -502,7 +505,9 @@ export default function Home() {
       const activeIndex = items.findIndex((day) => day.id === activeDayId);
       return items.map((day, index) =>
         index === activeIndex
-          ? { ...day, [target]: endpoint }
+          ? scheduledTime
+            ? withScheduleTime({ ...day, [target]: endpoint }, target, scheduledTime)
+            : { ...day, [target]: endpoint }
           : target === "goal" && index === activeIndex + 1
             ? { ...day, start: endpoint }
             : day,
@@ -563,7 +568,7 @@ export default function Home() {
         const candidates = { ...(day.candidates ?? {}) };
         delete candidates[mainId];
         candidates[promoted.id] = [oldMain, ...alternatives.filter((item) => item.id !== id)];
-        return { ...day, places: nextPlaces, candidates };
+        return transferScheduleTime({ ...day, places: nextPlaces, candidates }, mainId, promoted.id);
       }),
     );
     setLegs([]);
@@ -863,6 +868,9 @@ export default function Home() {
           <SectionTitle title={`${activeDay.label} 일정`} subtitle="각 구간의 실시간 자동차 거리와 예상 시간이에요" />
           <ScheduleTimeline
             day={activeDay}
+            onTimeChange={(key, time) =>
+              setDays((items) => items.map((day) => (day.id === activeDayId ? withScheduleTime(day, key, time) : day)))
+            }
             legs={legs}
             dragIndex={dragIndex}
             onChooseEndpoint={chooseEndpoint}
@@ -895,6 +903,7 @@ export default function Home() {
       )}
       {tab === "map" && (
         <PlaceSearchPage
+          key={`${activeDayId}:${endpointTarget}:${candidateFor}:${insertIndex}`}
           places={places}
           start={activeDay.start}
           goal={activeDay.goal}
@@ -926,8 +935,8 @@ export default function Home() {
           }}
           onScrollToSaved={() => savedPlacesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
           onToggleSaved={toggleSaved}
-          onSelectPlace={(place) =>
-            endpointTarget ? setEndpoint(place) : candidateFor ? addCandidate(place) : addPlace(place)
+          onSelectPlace={(place, time) =>
+            endpointTarget ? setEndpoint(place, time) : candidateFor ? addCandidate(place) : addPlace(place, time)
           }
           onSavedCategoryChange={setRouteSavedCategory}
           onOpenSavedPlaces={() => setTab("saved")}

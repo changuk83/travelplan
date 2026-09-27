@@ -5,10 +5,13 @@ import { PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 import type { RouteLeg } from "../../NaverMap";
 import type { Place } from "../../domain/types";
 import NavigationLinks from "../navigation/NavigationLinks";
+import ScheduleTimeField from "./ScheduleTimeField";
 import LegSummary from "./LegSummary";
 
 type Props = {
   place: Place;
+  scheduledTime: string;
+  onTimeChange: (time: string) => void;
   index: number;
   leg?: RouteLeg;
   alternatives: Place[];
@@ -26,6 +29,8 @@ type Props = {
 
 export default function ScheduleStop({
   place,
+  scheduledTime,
+  onTimeChange,
   index,
   leg,
   alternatives,
@@ -108,6 +113,7 @@ export default function ScheduleStop({
               {place.category} · {place.address}
             </p>
             {place.memo && <p className="place-memo">메모 · {place.memo}</p>}
+            <ScheduleTimeField label="방문 예정 시간" value={scheduledTime} onChange={onTimeChange} />
             <LegSummary leg={leg} />
             <div className="stop-actions">
               <button

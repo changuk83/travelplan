@@ -1,5 +1,6 @@
 "use client";
 
+import ScheduleTimeField from "../schedule/ScheduleTimeField";
 import PlaceNameLink from "../navigation/PlaceNameLink";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -80,6 +81,7 @@ function RecommendationCard({
   onAdd,
   onSave,
 }: Pick<Props, "trip" | "onAdd" | "onSave"> & { recommendation: AiRecommendation }) {
+  const [scheduledTime, setScheduledTime] = useState("");
   const [selectedDayId, setSelectedDayId] = useState(recommendation.dayId);
   const [insertIndex, setInsertIndex] = useState(recommendation.insertIndex);
   const [added, setAdded] = useState(false);
@@ -100,6 +102,7 @@ function RecommendationCard({
       <p className="trip-ai-address">{place.address}</p>
       <p>{recommendation.reason}</p>
       {recommendation.distanceLabel && <p className="trip-ai-distance">{recommendation.distanceLabel}</p>}
+      <ScheduleTimeField value={scheduledTime} onChange={setScheduledTime} disabled={pending || added} />
       <div className="trip-ai-card-fields">
         <label>
           추가할 일정
@@ -150,7 +153,12 @@ function RecommendationCard({
             busy.current = true;
             setPending(true);
             try {
-              const result = await onAdd({ ...recommendation, dayId: day.id, insertIndex: position });
+              const result = await onAdd({
+                ...recommendation,
+                dayId: day.id,
+                insertIndex: position,
+                scheduledTime: scheduledTime || undefined,
+              });
               setError(result ?? "");
               if (!result) setAdded(true);
             } catch {

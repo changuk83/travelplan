@@ -1,4 +1,4 @@
-import { addPlaceCategory, placeCategories } from "./place";
+import { addPlaceCategory, placeCategories, validScheduleTime, withScheduleTime, transferScheduleTime } from "./place";
 import type { ScheduleCommand, ScheduleState } from "./schedule";
 import type { DayPlan, Place } from "./types";
 
@@ -54,6 +54,8 @@ export function applyScheduleCommand(
   let days = trip.days;
   let saved: Place | undefined;
   if (command.kind === "add_place") {
+    if (command.scheduledTime !== undefined && !validScheduleTime(command.scheduledTime))
+      return fail("시간은 00:00부터 23:59까지 입력해 주세요.");
     if (!validPlace(command.place)) return fail("장소의 위치를 확인할 수 없어요. 다시 검색해 주세요.");
     if (day.places.length >= 30) return fail("하루 경유지는 최대 30곳까지 추가할 수 있어요.");
     if (day.places.some((place) => samePlace(place, command.place))) return fail("이 날짜에 이미 추가한 장소예요.");
@@ -62,7 +64,13 @@ export function applyScheduleCommand(
     saved = addPlaceCategory(command.place, trip.title);
     const places = [...day.places];
     places.splice(command.insertIndex, 0, saved);
-    days = days.map((item) => (item.id === day.id ? { ...item, places } : item));
+    days = days.map((item) =>
+      item.id === day.id
+        ? command.scheduledTime
+          ? withScheduleTime({ ...item, places }, `place:${command.place.id}`, command.scheduledTime)
+          : { ...item, places }
+        : item,
+    );
   } else if (command.kind === "remove_place") {
     if (!day.places.some((place) => place.id === command.placeId)) return fail("삭제할 장소를 찾을 수 없어요.");
     const [promoted, ...remaining] = scheduleCandidates(day, command.placeId);
@@ -74,7 +82,9 @@ export function applyScheduleCommand(
     const places = promoted
       ? day.places.map((place) => (place.id === command.placeId ? promoted : place))
       : day.places.filter((place) => place.id !== command.placeId);
-    days = days.map((item) => (item.id === day.id ? { ...item, places, candidates } : item));
+    days = days.map((item) =>
+      item.id === day.id ? transferScheduleTime({ ...item, places, candidates }, command.placeId, promoted?.id) : item,
+    );
   } else if (command.kind === "move_place") {
     const place = day.places.find((item) => item.id === command.placeId);
     const destination = days.find((item) => item.id === command.toDayId);
@@ -93,10 +103,15 @@ export function applyScheduleCommand(
       delete candidates[place.id];
       days = days.map((item) =>
         item.id === day.id
-          ? { ...item, places: item.places.filter((entry) => entry.id !== place.id), candidates }
+          ? transferScheduleTime(
+              { ...item, places: item.places.filter((entry) => entry.id !== place.id), candidates },
+              place.id,
+            )
           : item.id === destination.id
             ? {
-                ...item,
+                ...(day.scheduleTimes?.[`place:${place.id}`]
+                  ? withScheduleTime(item, `place:${place.id}`, day.scheduleTimes[`place:${place.id}`])
+                  : item),
                 places: target,
                 candidates: { ...item.candidates, ...(movedCandidates.length ? { [place.id]: movedCandidates } : {}) },
               }

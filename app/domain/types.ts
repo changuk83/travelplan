@@ -28,6 +28,7 @@ export type DayPlan = {
   goal: RouteEndpoint;
   places: Place[];
   candidates?: Record<string, Place[]>;
+  scheduleTimes?: Record<string, string>;
 };
 
 export type TripPlan = {

@@ -87,6 +87,13 @@ function validate(state: ScheduleState) {
         stopIds.push(`${day.id}:${p.id}`);
       });
       unique(day.places.map((p) => p.id));
+      if (day.scheduleTimes !== undefined) {
+        if (!day.scheduleTimes || typeof day.scheduleTimes !== "object" || Array.isArray(day.scheduleTimes)) invalid();
+        const keys = new Set(["start", "goal", ...day.places.map((p) => `place:${p.id}`)]);
+        for (const [key, value] of Object.entries(day.scheduleTimes)) {
+          if (!keys.has(key) || typeof value !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) invalid();
+        }
+      }
       if (day.candidates !== undefined) {
         if (!day.candidates || typeof day.candidates !== "object" || Array.isArray(day.candidates)) invalid();
         Object.entries(day.candidates).forEach(([id, candidates]) => {
@@ -176,6 +183,7 @@ export async function readState(db: D1Database, userId: string): Promise<Version
             },
             goal: { name: String(d.goal_name), longitude: Number(d.goal_longitude), latitude: Number(d.goal_latitude) },
             places: dayStops.map(decodePlace),
+            ...(d.schedule_times != null ? { scheduleTimes: JSON.parse(String(d.schedule_times)) } : {}),
             ...(Object.keys(candidateMap).length ? { candidates: candidateMap } : {}),
           };
         }),
@@ -282,7 +290,7 @@ export async function writeState(
     );
     t.days.forEach((d, di) => {
       add(
-        "INSERT INTO trip_days(id,trip_id,label,date_label,position,start_name,start_longitude,start_latitude,goal_name,goal_longitude,goal_latitude) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO trip_days(id,trip_id,label,date_label,position,start_name,start_longitude,start_latitude,goal_name,goal_longitude,goal_latitude,schedule_times) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
         d.id,
         t.id,
         d.label,
@@ -294,6 +302,7 @@ export async function writeState(
         d.goal.name,
         d.goal.longitude,
         d.goal.latitude,
+        d.scheduleTimes === undefined ? null : JSON.stringify(d.scheduleTimes),
       );
       d.places.forEach((p, pi) => {
         const stopId = `${d.id}:${p.id}`;

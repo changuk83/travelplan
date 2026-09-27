@@ -3269,3 +3269,36 @@ body:has(.google-test-shell) .google-test-shortcut {
   outline-offset: 3px;
   border-radius: 2px;
 }
+.schedule-time-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin: 10px 0;
+}
+.schedule-time-field label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.schedule-time-field small {
+  font-size: inherit;
+}
+.schedule-time-field input {
+  min-width: 135px;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+.schedule-time-field button {
+  min-height: 40px;
+  padding: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}

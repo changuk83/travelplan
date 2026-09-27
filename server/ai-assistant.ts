@@ -106,6 +106,18 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
           Object.defineProperty(candidates, id, { value: cleaned, enumerable: true });
         }
       }
+      let scheduleTimes: Record<string, string> | undefined;
+      if (raw.scheduleTimes !== undefined) {
+        if (!isObject(raw.scheduleTimes)) return null;
+        const keys = new Set(["start", "goal", ...places.map((p) => `place:${p!.id}`)]);
+        if (
+          Object.entries(raw.scheduleTimes).some(
+            ([key, value]) => !keys.has(key) || typeof value !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value),
+          )
+        )
+          return null;
+        scheduleTimes = raw.scheduleTimes as Record<string, string>;
+      }
       const endpoint = (point: Point & Record<string, unknown>) => ({
         name: point.name as string,
         longitude: point.longitude,
@@ -119,6 +131,7 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
         goal: endpoint(raw.goal),
         places: places as Place[],
         candidates,
+        ...(scheduleTimes ? { scheduleTimes } : {}),
       });
     }
     return { id: item.id, title: item.title, updatedAt: item.updatedAt as number, days };
@@ -640,6 +653,7 @@ export async function handleAiChat(request: Request, env: AiEnv, deps: AiDepende
       days: input.trip.days.map((day, i) => ({
         dayId: day.id,
         dayNumber: i + 1,
+        scheduleTimes: day.scheduleTimes,
         start: day.start.name,
         goal: day.goal.name,
         places: day.places.map((place, index) => ({ index, id: place.id, name: place.name })),

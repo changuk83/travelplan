@@ -77,6 +77,7 @@ export function createScheduleTools(trips: TripPlan[], places: Map<string, Place
         date: day.date,
         start: day.start,
         goal: day.goal,
+        scheduleTimes: day.scheduleTimes,
         places: day.places.map((place, index) => ({ ...place, index, candidates: scheduleCandidates(day, place.id) })),
       };
     if (actions.length)

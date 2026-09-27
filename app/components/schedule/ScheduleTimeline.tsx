@@ -5,12 +5,14 @@ import { Fragment, PointerEvent as ReactPointerEvent } from "react";
 import type { RouteLeg } from "../../NaverMap";
 import type { DayPlan, Place } from "../../domain/types";
 import NavigationLinks from "../navigation/NavigationLinks";
+import ScheduleTimeField from "./ScheduleTimeField";
 import LegSummary from "./LegSummary";
 import ScheduleStop from "./ScheduleStop";
 import TimelineInsertion from "./TimelineInsertion";
 
 type Props = {
   day: DayPlan;
+  onTimeChange: (key: string, time: string) => void;
   legs: RouteLeg[];
   dragIndex: number | null;
   onChooseEndpoint: (target: "start" | "goal") => void;
@@ -28,6 +30,7 @@ type Props = {
 
 export default function ScheduleTimeline({
   day,
+  onTimeChange,
   legs,
   dragIndex,
   onChooseEndpoint,
@@ -55,6 +58,11 @@ export default function ScheduleTimeline({
             </h3>
           </div>
           <p>{day.label} 출발지예요</p>
+          <ScheduleTimeField
+            label="출발 시간"
+            value={day.scheduleTimes?.start ?? ""}
+            onChange={(time) => onTimeChange("start", time)}
+          />
           <div className="stop-actions">
             <button className="add-place" onClick={() => onChooseEndpoint("start")}>
               출발지 변경
@@ -68,6 +76,8 @@ export default function ScheduleTimeline({
         <Fragment key={place.id}>
           <ScheduleStop
             place={place}
+            scheduledTime={day.scheduleTimes?.[`place:${place.id}`] ?? ""}
+            onTimeChange={(time) => onTimeChange(`place:${place.id}`, time)}
             index={index}
             leg={legs[index]}
             alternatives={day.candidates?.[place.id] ?? []}
@@ -95,6 +105,11 @@ export default function ScheduleTimeline({
             </h3>
           </div>
           <p>{day.goal.name === "목적지 미정" ? "검색해서 목적지를 정해 주세요." : `${day.label} 최종 목적지예요`}</p>
+          <ScheduleTimeField
+            label="도착 시간"
+            value={day.scheduleTimes?.goal ?? ""}
+            onChange={(time) => onTimeChange("goal", time)}
+          />
           {day.goal.name !== "목적지 미정" && <LegSummary leg={legs[places.length]} />}
           <div className="stop-actions">
             <button className="add-place" onClick={() => onChooseEndpoint("goal")}>

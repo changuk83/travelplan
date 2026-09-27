@@ -1,10 +1,11 @@
 "use client";
 
 import PlaceNameLink from "../navigation/PlaceNameLink";
-import { type FormEvent, type RefObject, useEffect, useRef } from "react";
+import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 import NaverMap from "../../NaverMap";
 import { distanceLabel, placeCategories, pointDistance } from "../../domain/place";
 import type { Place, RouteEndpoint, SavedCategory, SearchSource } from "../../domain/types";
+import ScheduleTimeField from "../schedule/ScheduleTimeField";
 import SectionTitle from "../SectionTitle";
 
 type CategoryFilter = "전체" | SavedCategory;
@@ -66,10 +67,11 @@ export default function PlaceSearchPage({
   onCancelSelection: () => void;
   onScrollToSaved: () => void;
   onToggleSaved: (place: Place) => void;
-  onSelectPlace: (place: Place) => void;
+  onSelectPlace: (place: Place, scheduledTime?: string) => void;
   onSavedCategoryChange: (category: CategoryFilter) => void;
   onOpenSavedPlaces: () => void;
 }) {
+  const [scheduledTime, setScheduledTime] = useState("");
   const searchFormRef = useRef<HTMLFormElement>(null);
   const searchResultsRef = useRef<HTMLDivElement>(null);
   const searchVisible = results.length > 0 || Boolean(error);
@@ -79,6 +81,7 @@ export default function PlaceSearchPage({
     const dismissOutside = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
+      if (target instanceof Element && target.closest(".schedule-time-field")) return;
       if (searchFormRef.current?.contains(target) || searchResultsRef.current?.contains(target)) return;
       onDismissResults();
     };
@@ -143,6 +146,15 @@ export default function PlaceSearchPage({
             <span aria-hidden="true">↓</span>
           </button>
         )}
+        {!candidateFor && (
+          <ScheduleTimeField
+            label={
+              endpointTarget === "start" ? "출발 시간" : endpointTarget === "goal" ? "도착 시간" : "방문 예정 시간"
+            }
+            value={scheduledTime}
+            onChange={setScheduledTime}
+          />
+        )}
         {searchVisible && (
           <div ref={searchResultsRef} className={`search-results ${choosingPlace ? "with-insertion" : ""}`}>
             {source === "geocoding" && (
@@ -168,7 +180,10 @@ export default function PlaceSearchPage({
                   <button className="save-place" onClick={() => onToggleSaved(place)}>
                     {savedPlaces.some((item) => item.id === place.id) ? "♥ 저장됨" : "♡ 저장"}
                   </button>
-                  <button onClick={() => onSelectPlace(place)} disabled={selectionDisabled(place)}>
+                  <button
+                    onClick={() => onSelectPlace(place, scheduledTime || undefined)}
+                    disabled={selectionDisabled(place)}
+                  >
                     {selectionLabel(place)}
                   </button>
                 </div>
@@ -226,7 +241,10 @@ export default function PlaceSearchPage({
                 <p>{place.address}</p>
                 <span>{place.category}</span>
               </div>
-              <button onClick={() => onSelectPlace(place)} disabled={selectionDisabled(place)}>
+              <button
+                onClick={() => onSelectPlace(place, scheduledTime || undefined)}
+                disabled={selectionDisabled(place)}
+              >
                 {selectionLabel(place)}
               </button>
             </article>

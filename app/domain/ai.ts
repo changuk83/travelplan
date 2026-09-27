@@ -8,6 +8,7 @@ export type AiRecommendation = {
   reason: string;
   dayId: string;
   insertIndex: number;
+  scheduledTime?: string;
   distanceMeters?: number;
   distanceLabel?: string;
 };

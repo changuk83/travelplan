@@ -166,3 +166,31 @@ test("null records reject cleanly and long trip-name categories preserve names",
   state.trips[0].days = [null];
   await assert.rejects(writeState(db, "1", "device1", state, 1, "null-day"), { code: "INVALID_STATE" });
 });
+
+test("schedule times survive D1 roundtrip and reject invalid or orphaned values atomically", async () => {
+  const db = database();
+  const timed = sample();
+  timed.trips[0].days[0].scheduleTimes = { start: "00:00", "place:p1": "12:30", goal: "23:59" };
+  await writeState(db, "1", "time-device", timed, 0, "time-save");
+  assert.deepEqual((await readState(db, "1")).trips[0].days[0].scheduleTimes, timed.trips[0].days[0].scheduleTimes);
+  for (const bad of [
+    { start: "24:00" },
+    { start: "09:60" },
+    { start: "9:00" },
+    { start: null },
+    { "place:missing": "10:00" },
+    [],
+  ]) {
+    const invalid = structuredClone(timed);
+    invalid.trips[0].days[0].scheduleTimes = bad;
+    await assert.rejects(
+      writeState(db, "1", "time-device", invalid, 1, "invalid-time"),
+      (error) => error.status === 400,
+    );
+    assert.equal((await readState(db, "1")).revision, 1);
+  }
+  timed.trips[0].days[0].scheduleTimes = {};
+  await writeState(db, "1", "time-device", timed, 1, "clear-time");
+  assert.deepEqual((await readState(db, "1")).trips[0].days[0].scheduleTimes, {});
+  db.sqlite.close();
+});

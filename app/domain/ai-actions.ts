@@ -15,6 +15,7 @@ export function insertAiRecommendation(
       dayId: recommendation.dayId,
       place: recommendation.place,
       insertIndex: recommendation.insertIndex,
+      scheduledTime: recommendation.scheduledTime,
     },
   );
   return { trip: result.state.trips[0], error: result.error };

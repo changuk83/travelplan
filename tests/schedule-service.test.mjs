@@ -227,3 +227,40 @@ test("HTTP rejects stale/invalid requests and legacy unversioned snapshot withou
   assert.equal((await handleScheduleApi(unversioned, db, "1", "device")).status, 428);
   assert.equal((await readState(db, "1")).revision, 1);
 });
+
+test("visit times belong to schedule slots and follow moves and candidate promotion", () => {
+  const original = state();
+  original.trips[0].days[0].scheduleTimes = { start: "08:00", "place:main": "12:30", goal: "18:00" };
+  const added = applyScheduleCommand(
+    original,
+    command("add_place", { place: place("timed"), insertIndex: 1, scheduledTime: "14:15" }),
+  );
+  assert.equal(added.error, null);
+  assert.equal(added.state.trips[0].days[0].scheduleTimes["place:timed"], "14:15");
+  assert.equal(added.state.savedPlaces[0].scheduledTime, undefined);
+  const invalid = applyScheduleCommand(
+    original,
+    command("add_place", { place: place("timed"), insertIndex: 1, scheduledTime: "24:00" }),
+  );
+  assert.ok(invalid.error);
+  assert.equal(invalid.state, original);
+  const moved = applyScheduleCommand(
+    original,
+    command("move_place", { placeId: "main", toDayId: "d2", insertIndex: 0 }),
+  ).state;
+  assert.equal(moved.trips[0].days[0].scheduleTimes["place:main"], undefined);
+  assert.equal(moved.trips[0].days[1].scheduleTimes["place:main"], "12:30");
+  assert.equal(moved.trips[0].days[0].scheduleTimes.start, "08:00");
+  const reordered = applyScheduleCommand(
+    original,
+    command("move_place", { placeId: "main", toDayId: "d1", insertIndex: 1 }),
+  ).state;
+  assert.equal(reordered.trips[0].days[0].scheduleTimes["place:main"], "12:30");
+  const promoted = applyScheduleCommand(original, command("remove_place", { placeId: "main" })).state;
+  assert.equal(promoted.trips[0].days[0].scheduleTimes["place:main"], undefined);
+  assert.equal(promoted.trips[0].days[0].scheduleTimes["place:candidate"], "12:30");
+  const bare = structuredClone(original);
+  bare.trips[0].days[0].candidates = {};
+  const removed = applyScheduleCommand(bare, command("remove_place", { placeId: "main" })).state;
+  assert.equal(removed.trips[0].days[0].scheduleTimes["place:main"], undefined);
+});

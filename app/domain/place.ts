@@ -1,4 +1,4 @@
-import type { Place, SavedCategory } from "./types";
+import type { DayPlan, Place, SavedCategory } from "./types";
 
 export const DEFAULT_SAVED_CATEGORIES: SavedCategory[] = ["맛집", "카페", "숙소", "관광", "휴게소", "기타"];
 
@@ -42,4 +42,23 @@ export function placeCategories(place: Place): SavedCategory[] {
 
 export function addPlaceCategory(place: Place, category: SavedCategory): Place {
   return { ...place, savedCategories: [...new Set([...placeCategories(place), category])], savedCategory: undefined };
+}
+
+export function validScheduleTime(value: unknown): value is string {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+export function withScheduleTime(day: DayPlan, key: string, value: string): DayPlan {
+  if (value && !validScheduleTime(value)) return day;
+  const scheduleTimes = { ...day.scheduleTimes };
+  if (value) scheduleTimes[key] = value;
+  else delete scheduleTimes[key];
+  return { ...day, scheduleTimes };
+}
+
+export function transferScheduleTime(day: DayPlan, fromId: string, toId?: string): DayPlan {
+  if (!day.scheduleTimes) return day;
+  const time = day.scheduleTimes[`place:${fromId}`];
+  const next = withScheduleTime(day, `place:${fromId}`, "");
+  return toId && time ? withScheduleTime(next, `place:${toId}`, time) : next;
 }
