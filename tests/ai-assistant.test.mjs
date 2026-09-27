@@ -16,6 +16,7 @@ execFileSync(
     path.join(root, "node_modules/typescript/bin/tsc"),
     "server/ai-assistant.ts",
     "app/domain/ai-actions.ts",
+    "app/domain/naver-place-url.ts",
     "--outDir",
     output,
     "--module",
@@ -33,6 +34,7 @@ execFileSync(
 const require = createRequire(import.meta.url);
 const { insertAiRecommendation } = require(path.join(output, "app/domain/ai-actions.js"));
 const { handleAiChat } = require(path.join(output, "server/ai-assistant.js"));
+const { naverPlaceUrl } = require(path.join(output, "app/domain/naver-place-url.js"));
 const { distanceToRoute, sampleRoutePoints, isHighwayRestStop } = require(path.join(output, "server/ai-assistant.js"));
 const { createScheduleTools, scheduleTools } = require(path.join(output, "server/schedule-tools.js"));
 
@@ -126,6 +128,89 @@ function request(overrides = {}) {
   return new Request("https://gildam.test/api/ai/chat", {
     method: "POST",
     body: JSON.stringify({ trip, activeDayId: "day-1", message: "셋째날 식당 추천해줘", history: [], ...overrides }),
+  });
+}
+
+test("Naver links retain verified IDs and avoid overly specific address searches", () => {
+  const p = {
+    ...place,
+    name: "연화리해물천국 해운대 엘시티점",
+    address: "부산광역시 해운대구 달맞이길 30 엘씨티 포디움동 1040호",
+  };
+  assert.equal(
+    decodeURIComponent(naverPlaceUrl(p)),
+    "https://map.naver.com/p/search/부산광역시 해운대구 연화리해물천국 해운대 엘시티점",
+  );
+  assert.equal(
+    naverPlaceUrl({ ...p, link: "https://m.place.naver.com/restaurant/12345/home" }),
+    "https://map.naver.com/p/entry/place/12345",
+  );
+  assert.equal(
+    naverPlaceUrl({ ...p, link: "https://map.naver.com/p/search/test/place/12345" }),
+    "https://map.naver.com/p/entry/place/12345",
+  );
+  assert.equal(naverPlaceUrl({ ...p, link: "https://place.map.kakao.com/12345" }), naverPlaceUrl(p));
+  assert.equal(naverPlaceUrl({ ...p, link: "https://map.naver.com.evil.test/p/entry/place/12345" }), naverPlaceUrl(p));
+});
+
+for (const fixOnRetry of [false, true]) {
+  test(`missing recommendation IDs retry once then retain real cards: ${fixOnRetry}`, async (t) => {
+    let calls = 0,
+      searches = 0;
+    t.mock.method(globalThis, "fetch", async (_url, options) => {
+      calls++;
+      const body = JSON.parse(options.body);
+      if (calls === 1)
+        return Response.json({
+          status: "completed",
+          output: [
+            {
+              type: "function_call",
+              name: "search_near_place",
+              call_id: "search",
+              arguments: JSON.stringify({ dayId: "day-1", query: "식당", anchorId: "start" }),
+            },
+          ],
+        });
+      if (calls === 3) assert.equal(body.tool_choice, "none");
+      return Response.json({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  message: "식당을 골라봤어요.",
+                  recommendationIds:
+                    calls === 3 && fixOnRetry ? ["recommendation-1"] : calls === 2 ? [] : ["invalid-place-id"],
+                }),
+              },
+            ],
+          },
+        ],
+      });
+    });
+    const response = await handleAiChat(
+      request(),
+      { OPENAI_API_KEY: "test-only" },
+      {
+        search: async () => {
+          searches++;
+          return Response.json({ places: [{ ...place, ...endpoint }] });
+        },
+        route: async () => assert.fail("unexpected route call"),
+      },
+    );
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(calls, 3);
+    assert.equal(searches, 1);
+    assert.equal(body.recommendations.length, 1);
+    assert.equal(body.recommendations[0].place.id, place.id);
+    if (!fixOnRetry) assert.match(body.message, /후보 장소/);
   });
 }
 

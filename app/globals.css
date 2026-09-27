@@ -3270,25 +3270,80 @@ body:has(.google-test-shell) .google-test-shortcut {
   border-radius: 2px;
 }
 .schedule-time-field {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px;
-  margin: 10px 0;
+  margin: 6px 0;
+  min-width: 0;
 }
-.schedule-time-field label {
-  display: grid;
-  gap: 5px;
-  color: var(--muted);
+.schedule-time-summary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.schedule-time-field .schedule-time-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px dashed #d5dfd8;
+  border-radius: 20px;
+  color: #64776b;
+  background: #fafcf9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.schedule-time-chip svg {
+  flex-shrink: 0;
+}
+.schedule-time-field .schedule-time-chip.is-set {
+  border-style: solid;
+  border-color: #deeadf;
+  background: #edf5ed;
+  color: #276345;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.schedule-time-plus {
+  font-size: 15px;
+}
+.schedule-time-field .schedule-time-clear {
+  width: 32px;
+  min-height: 34px;
+  color: #738278;
+  font-size: 17px;
+}
+.schedule-time-editor {
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid #deeadf;
+  border-radius: 12px;
+  background: #f8faf7;
+}
+.schedule-time-editor label {
+  display: block;
+  margin-bottom: 6px;
+  color: #53675a;
   font-size: 12px;
 }
-.schedule-time-field small {
-  font-size: inherit;
+.schedule-time-editor label span {
+  color: var(--muted);
+  margin-left: 4px;
+  font-size: 11px;
+}
+.schedule-time-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 .schedule-time-field input {
-  min-width: 135px;
-  min-height: 40px;
-  padding: 7px 10px;
+  flex: 1 1 100px;
+  min-width: 0;
+  width: 110px;
+  max-width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: white;
@@ -3296,9 +3351,23 @@ body:has(.google-test-shell) .google-test-shortcut {
   font: inherit;
   font-size: 16px;
 }
-.schedule-time-field button {
-  min-height: 40px;
-  padding: 6px;
+.schedule-time-editor-row button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 8px;
   color: var(--muted);
   font-size: 12px;
+}
+.schedule-time-editor-row .schedule-time-apply {
+  color: white;
+  background: #276345;
+}
+.schedule-time-field button:focus-visible,
+.schedule-time-field input:focus-visible {
+  outline: 2px solid #276345;
+  outline-offset: 2px;
+}
+.schedule-time-field button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
