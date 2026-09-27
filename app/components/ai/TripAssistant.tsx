@@ -1,5 +1,6 @@
 "use client";
 
+import PlaceNameLink from "../navigation/PlaceNameLink";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { AiChatRequest, AiChatResponse, AiMessage, AiRecommendation } from "../../domain/ai";
@@ -93,7 +94,9 @@ function RecommendationCard({
   return (
     <article className="trip-ai-card">
       <span className="trip-ai-category">{place.category || "추천 장소"}</span>
-      <h3>{place.name}</h3>
+      <h3>
+        <PlaceNameLink place={place} />
+      </h3>
       <p className="trip-ai-address">{place.address}</p>
       <p>{recommendation.reason}</p>
       {recommendation.distanceLabel && <p className="trip-ai-distance">{recommendation.distanceLabel}</p>}

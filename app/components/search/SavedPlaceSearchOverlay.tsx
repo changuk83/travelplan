@@ -1,5 +1,6 @@
 "use client";
 
+import PlaceNameLink from "../navigation/PlaceNameLink";
 import type { FormEvent } from "react";
 import type { Place } from "../../domain/types";
 
@@ -45,7 +46,9 @@ export default function SavedPlaceSearchOverlay({
           {results.map((place) => (
             <article key={place.id}>
               <div>
-                <strong>{place.name}</strong>
+                <strong>
+                  <PlaceNameLink place={place} />
+                </strong>
                 <p>
                   {place.category} · {place.address}
                 </p>

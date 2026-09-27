@@ -1,5 +1,6 @@
 "use client";
 
+import PlaceNameLink from "../navigation/PlaceNameLink";
 import { PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 import type { RouteLeg } from "../../NaverMap";
 import type { Place } from "../../domain/types";
@@ -99,7 +100,9 @@ export default function ScheduleStop({
             </button>
             <span className="candidate-kind">메인 · 1/{slideCount}</span>
             <div className="stop-title-row">
-              <h3>{place.name}</h3>
+              <h3>
+                <PlaceNameLink place={place} />
+              </h3>
             </div>
             <p>
               {place.category} · {place.address}
@@ -135,7 +138,9 @@ export default function ScheduleStop({
                 후보 {i + 1} · {i + 2}/{slideCount}
               </span>
               <div className="stop-title-row">
-                <h3>{candidate.name}</h3>
+                <h3>
+                  <PlaceNameLink place={candidate} />
+                </h3>
               </div>
               <p>
                 {candidate.category} · {candidate.address}

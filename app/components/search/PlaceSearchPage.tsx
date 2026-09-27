@@ -1,5 +1,6 @@
 "use client";
 
+import PlaceNameLink from "../navigation/PlaceNameLink";
 import { type FormEvent, type RefObject, useEffect, useRef } from "react";
 import NaverMap from "../../NaverMap";
 import { distanceLabel, placeCategories, pointDistance } from "../../domain/place";
@@ -151,7 +152,9 @@ export default function PlaceSearchPage({
             {results.map((place) => (
               <article key={place.id}>
                 <div>
-                  <strong>{place.name}</strong>
+                  <strong>
+                    <PlaceNameLink place={place} />
+                  </strong>
                   <p>
                     {place.category} · {place.address}
                   </p>
@@ -217,7 +220,9 @@ export default function PlaceSearchPage({
             <article className="rest-card" key={place.id}>
               <div className="rest-symbol">♡</div>
               <div className="rest-copy">
-                <h3>{place.name}</h3>
+                <h3>
+                  <PlaceNameLink place={place} />
+                </h3>
                 <p>{place.address}</p>
                 <span>{place.category}</span>
               </div>

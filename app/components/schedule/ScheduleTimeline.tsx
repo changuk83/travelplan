@@ -1,5 +1,6 @@
 "use client";
 
+import PlaceNameLink from "../navigation/PlaceNameLink";
 import { Fragment, PointerEvent as ReactPointerEvent } from "react";
 import type { RouteLeg } from "../../NaverMap";
 import type { DayPlan, Place } from "../../domain/types";
@@ -49,7 +50,9 @@ export default function ScheduleTimeline({
         <div className="stop-dot">S</div>
         <div className="stop-content">
           <div className="stop-title-row">
-            <h3>{day.start.name}</h3>
+            <h3>
+              <PlaceNameLink place={day.start} />
+            </h3>
           </div>
           <p>{day.label} 출발지예요</p>
           <div className="stop-actions">
@@ -87,7 +90,9 @@ export default function ScheduleTimeline({
         <div className="stop-dot">G</div>
         <div className="stop-content">
           <div className="stop-title-row">
-            <h3>{day.goal.name}</h3>
+            <h3>
+              <PlaceNameLink place={day.goal} />
+            </h3>
           </div>
           <p>{day.goal.name === "목적지 미정" ? "검색해서 목적지를 정해 주세요." : `${day.label} 최종 목적지예요`}</p>
           {day.goal.name !== "목적지 미정" && <LegSummary leg={legs[places.length]} />}

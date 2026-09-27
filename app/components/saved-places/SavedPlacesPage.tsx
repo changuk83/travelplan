@@ -1,3 +1,4 @@
+import PlaceNameLink from "../navigation/PlaceNameLink";
 import { placeCategories } from "../../domain/place";
 import type { Place, SavedCategory } from "../../domain/types";
 import SectionTitle from "../SectionTitle";
@@ -72,7 +73,9 @@ export default function SavedPlacesPage({
               <div className="rest-symbol">♥</div>
               <div className="rest-copy">
                 <div className="saved-place-title">
-                  <h3>{place.name}</h3>
+                  <h3>
+                    <PlaceNameLink place={place} />
+                  </h3>
                 </div>
                 <p>{place.address}</p>
                 <span>{place.category}</span>

@@ -3253,3 +3253,19 @@ body:has(.google-test-shell) .google-test-shortcut {
   border-radius: 8px;
   background: white;
 }
+.place-name-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #9db7a8;
+  text-underline-offset: 3px;
+}
+
+.place-name-link:hover {
+  color: #276345;
+}
+
+.place-name-link:focus-visible {
+  outline: 2px solid #276345;
+  outline-offset: 3px;
+  border-radius: 2px;
+}
