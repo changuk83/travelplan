@@ -54,6 +54,7 @@ export default function ScheduleStop({
       onPointerMove={onContinueDrag}
       onPointerUp={onEndDrag}
       onPointerCancel={onEndDrag}
+      onLostPointerCapture={onEndDrag}
       aria-label={`${place.name} 순서 끌기`}
       title="끌어서 순서 변경"
     >
@@ -69,8 +70,16 @@ export default function ScheduleStop({
   );
   function goToSlide(target: number) {
     const next = Math.max(0, Math.min(target, slideCount - 1));
-    const element = trackRef.current?.children.item(next) as HTMLElement | null;
-    element?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    const track = trackRef.current;
+    const element = track?.children.item(next) as HTMLElement | null;
+    if (track && element) {
+      const trackBounds = track.getBoundingClientRect();
+      const slideBounds = element.getBoundingClientRect();
+      track.scrollTo({
+        left: track.scrollLeft + slideBounds.left - trackBounds.left - (track.clientWidth - slideBounds.width) / 2,
+        behavior: "smooth",
+      });
+    }
     setActiveSlide(next);
     onPreviewCandidate(place.id, next === 0 ? undefined : alternatives[next - 1]);
   }

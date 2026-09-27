@@ -636,12 +636,49 @@ button {
   user-select: none;
 }
 .sortable .timeline-item.dragging {
-  opacity: 0.72;
-  transform: scale(1.018);
-  z-index: 3;
-  background: #f5fcf8;
-  box-shadow: 0 10px 22px #173b2824;
-  border-radius: 13px;
+  opacity: 0.25;
+  outline: 2px dashed #91b69d;
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+.schedule-drag-layer .timeline-item.schedule-drag-ghost {
+  transform: scale(1.025) rotate(-0.5deg);
+  transform-origin: center;
+  opacity: 0.97;
+  filter: drop-shadow(0 10px 12px #173b2840);
+}
+.schedule-drag-layer .candidate-slide {
+  border-color: #61a881;
+}
+.schedule-drop-before .candidate-carousel,
+.schedule-drop-after .candidate-carousel {
+  overflow: visible;
+}
+.schedule-drop-before .candidate-carousel::before,
+.schedule-drop-after .candidate-carousel::after {
+  content: "여기에 놓기";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  border-top: 3px solid #168a51;
+  color: #14673f;
+  background: #e9f6ed;
+  font-size: 12px;
+  text-align: center;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.schedule-drop-before .candidate-carousel::before {
+  top: -20px;
+}
+.schedule-drop-after .candidate-carousel::after {
+  bottom: -20px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .schedule-drag-layer .timeline-item.schedule-drag-ghost {
+    transform: none;
+  }
 }
 .drag-handle {
   width: 36px;
@@ -775,6 +812,34 @@ button {
   border-color: #dde3df;
   color: #89958e;
   box-shadow: none;
+}
+.gildam-map-marker-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 2px 8px #173b2840;
+}
+.gildam-map-marker-badge {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e7f5ec;
+  color: #237748;
+  font: 700 13px/1 sans-serif;
+}
+.gildam-map-marker-badge.start {
+  background: #244f39;
+  color: #fff;
+}
+.gildam-map-marker-badge.goal {
+  background: #e8795c;
+  color: #fff;
 }
 .gildam-map-marker {
   width: 38px;

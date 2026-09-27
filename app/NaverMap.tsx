@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Place, RouteEndpoint } from "./domain/types";
 import type { NaverMapInstance, NaverOverlay } from "./lib/map-sdk-types";
+import { groupMapMarkers, markerGroupIcon } from "./domain/map-markers";
 import {
   currentMapPath,
   mapRouteKey,
@@ -132,16 +133,20 @@ export default function NaverMap({
       const bounds = new maps.LatLngBounds();
       routePositions.forEach((position) => bounds.extend(position));
       points.forEach((point) => {
+        bounds.extend(new maps.LatLng(point.latitude, point.longitude));
+      });
+      groupMapMarkers(points).forEach((group) => {
+        const point = group[0];
+        const icon = markerGroupIcon(group);
         const position = new maps.LatLng(point.latitude, point.longitude);
-        bounds.extend(position);
         const marker = new maps.Marker({
           map,
           position,
-          title: point.name,
-          zIndex: point.kind === "waypoint" ? 110 : 120,
+          title: icon.title,
+          zIndex: group.length > 1 ? 130 : point.kind === "waypoint" ? 110 : 120,
           icon: {
-            content: `<div class="gildam-map-marker ${point.kind}" aria-label="${point.label}">${point.label}</div>`,
-            anchor: new maps.Point(19, 19),
+            content: icon.content,
+            anchor: new maps.Point(icon.x, icon.y),
           },
         });
         overlays.current.push(marker);

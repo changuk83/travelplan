@@ -12,6 +12,31 @@ new Function(
   }).outputText,
 )(exports);
 const { mapRouteKey, currentMapPath, validMapPath } = exports;
+const markerExports = {};
+new Function(
+  "exports",
+  ts.transpileModule(readFileSync(new URL("../app/domain/map-markers.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText,
+)(markerExports);
+test("same-location markers retain every label and safely render names", () => {
+  const a = { name: 'Hotel <x> "', longitude: 129.1697794, latitude: 35.1599414, label: "S", kind: "start" };
+  const b = { ...a, label: "1", longitude: 129.223143, latitude: 35.188402, kind: "waypoint" };
+  const c = { ...a, label: "2", longitude: 129.1697847, latitude: 35.1599268, kind: "waypoint" };
+  const points = [a, b, c, { ...a, label: "G", kind: "goal" }];
+  const groups = markerExports.groupMapMarkers(points);
+  assert.deepEqual(
+    groups.map((g) => g.map((p) => p.label)),
+    [["S", "2", "G"], ["1"]],
+  );
+  assert.equal(points.length, 4);
+  const icon = markerExports.markerGroupIcon(groups[0]);
+  assert.ok(icon.content.includes("&lt;x&gt; &quot;"));
+  assert.ok(!icon.content.includes("<x>"));
+  assert.equal(icon.x, 52);
+  assert.equal(markerExports.markerGroupIcon(groups[1]).x, 19);
+  assert.deepEqual(markerExports.groupMapMarkers([]), []);
+});
 const start = { name: "용인", longitude: 127.1, latitude: 37.3 };
 const goal = { name: "부산", longitude: 129.1, latitude: 35.1 };
 const scope = { userId: 1, tripId: "trip", dayId: "day-1", mode: "schedule" };
