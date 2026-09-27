@@ -48,6 +48,10 @@
 
 ### 내부 일정 도구 (MCP 연결 준비 단계)
 
+- `server/place-tools.ts`: `search_near_place`(일정 장소 주변), `search_saved_places`(요청의 실제 내 장소 목록) 조회 도구. 경로 표본 검색은 `search_along_route`로 노출하며 기존 `search_day_places` 실행 이름도 호환한다. MCP 외부 서버가 아닌 내부 함수 호출 방식이다.
+- 식당·점심은 경로 계산 없이 일정 장소 중심으로 검색한다. 최대 4개 기준점, 요청 전체 검색 최대 6회 제한을 지키며 직선 3km 결과가 부족하면 같은 결과에서 8km까지 허용한다. 경로 표본 검색이 비었으면 남은 검색 예산으로 일정 장소 주변을 보완한다. 결과 없음/공급자 오류/예산 소진을 구분한다.
+- 내 장소 검색은 최근 AI 추천과 분리된 `savedPlaces` 스냅샷(최대 500개)만 사용한다. 검색 결과는 추천 카드일 뿐 자동 저장하지 않는다. 우회거리 비교 도구는 후속 과제다.
+
 - `server/schedule-tools.ts`: `list_trips`, `get_day_schedule`, `add_schedule_place`, `remove_schedule_place`, `move_schedule_place`, `add_place_candidate`의 스키마·설명·MCP annotations를 가진 공통 레지스트리. 현재 OpenAI function calling에 연결했으며 MCP 프로토콜 서버 자체는 공개하지 않았다.
 - AI의 조회는 요청에 포함된 여행 스냅샷을 사용한다. 등록·삭제·이동·후보 추가는 한 번에 한 건의 `ScheduleAction` 확인 카드만 준비한다. 사용자가 `변경 적용`/`삭제 확인`을 눌러야 저장된다.
 - `app/domain/schedule-service.ts`: UI와 서버의 공통 순수 변경 함수. 중복·좌표·일차·30곳 제한, 후보 승격, 이동 시 후보/메모 보존, 내 장소 및 여행 카테고리 등록을 처리한다.

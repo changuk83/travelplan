@@ -19,6 +19,7 @@ export type AiChatRequest = {
   history: AiMessage[];
   trips?: TripPlan[];
   availablePlaces?: Place[];
+  savedPlaces?: Place[];
 };
 
 export type AiChatResponse = {

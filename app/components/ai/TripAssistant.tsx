@@ -276,14 +276,22 @@ export default function TripAssistant({
         .reverse()
         .flatMap((turn) => turn.recommendations?.map((item) => item.place) ?? [])
         .slice(0, 40);
-      const availablePlaces = [...recentPlaces, ...savedPlaces]
+      const availablePlaces = recentPlaces
         .filter((place) => {
           if (seenPlaces.has(place.id)) return false;
           seenPlaces.add(place.id);
           return true;
         })
         .slice(0, 200);
-      const body: AiChatRequest = { message: question, trip, trips, activeDayId, history, availablePlaces };
+      const body: AiChatRequest = {
+        message: question,
+        trip,
+        trips,
+        activeDayId,
+        history,
+        availablePlaces,
+        savedPlaces: savedPlaces.slice(0, 500),
+      };
       const response = await fetch(`${apiBase.replace(/\/$/, "")}/api/ai/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

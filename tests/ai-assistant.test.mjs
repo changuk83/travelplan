@@ -129,6 +129,152 @@ function request(overrides = {}) {
   });
 }
 
+function mockSearchTool(t, name, args, inspect) {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const body = JSON.parse(options.body);
+    if (calls++ === 0) {
+      assert.ok(body.tools.some((tool) => tool.name === "search_near_place"));
+      assert.ok(body.tools.some((tool) => tool.name === "search_saved_places"));
+      assert.ok(body.tools.some((tool) => tool.name === "search_along_route"));
+      return Response.json({
+        status: "completed",
+        output: [{ type: "function_call", name, call_id: "search", arguments: JSON.stringify(args) }],
+      });
+    }
+    const result = JSON.parse(body.input.at(-1).output);
+    inspect(result);
+    return Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({
+                message: "검색 결과입니다.",
+                recommendationIds: (result.places ?? []).map((p) => p.id),
+              }),
+            },
+          ],
+        },
+      ],
+    });
+  });
+}
+
+test("nearby meal search uses itinerary coordinates without routes and excludes cafes", async (t) => {
+  mockSearchTool(t, "search_near_place", { dayId: "day-1", query: "점심", anchorId: "start" }, (result) => {
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.searchBasis, [endpoint.name]);
+    assert.equal(result.places.length, 1);
+    assert.match(result.places[0].distanceLabel, /직선/);
+  });
+  const response = await handleAiChat(
+    request(),
+    { OPENAI_API_KEY: "test-only" },
+    {
+      search: async (params) => {
+        assert.equal(params.get("q"), "식당");
+        assert.equal(params.get("fromLng"), String(endpoint.longitude));
+        return Response.json({
+          places: [
+            { ...place, ...endpoint, id: "meal" },
+            { ...place, ...endpoint, id: "cafe", category: "음식점 > 카페" },
+          ],
+        });
+      },
+      route: async () => assert.fail("nearby search must not calculate routes"),
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).recommendations.length, 1);
+});
+
+for (const failure of [false, true]) {
+  test(`nearby search distinguishes empty results from provider failure: ${failure}`, async (t) => {
+    mockSearchTool(t, "search_near_place", { dayId: "day-1", query: "식당", anchorId: null }, (result) => {
+      assert.equal(result.status, failure ? "upstream_error" : "empty");
+    });
+    const response = await handleAiChat(
+      request(),
+      { OPENAI_API_KEY: "test-only" },
+      {
+        search: async () => Response.json(failure ? {} : { places: [] }, { status: failure ? 503 : 200 }),
+        route: async () => assert.fail("unexpected route call"),
+      },
+    );
+    assert.equal(response.status, 200);
+  });
+}
+
+test("nearby search rejects fabricated anchor IDs without provider calls", async (t) => {
+  mockSearchTool(t, "search_near_place", { dayId: "day-1", query: "식당", anchorId: "fabricated" }, (result) =>
+    assert.equal(result.status, "invalid_input"),
+  );
+  const noCall = async () => assert.fail("must not call provider");
+  assert.equal(
+    (await handleAiChat(request(), { OPENAI_API_KEY: "test-only" }, { search: noCall, route: noCall })).status,
+    200,
+  );
+});
+
+test("saved search uses only saved snapshot and supports multiple categories without external search", async (t) => {
+  mockSearchTool(t, "search_saved_places", { dayId: "day-1", query: "", category: "부산 여행" }, (result) => {
+    assert.equal(result.total, 1);
+    assert.equal(result.places[0].placeId, "saved");
+  });
+  const noCall = async () => assert.fail("must not call provider");
+  const response = await handleAiChat(
+    request({
+      savedPlaces: [{ ...place, id: "saved", savedCategories: ["식당", "부산 여행"] }],
+      availablePlaces: [{ ...place, id: "recent", savedCategories: ["부산 여행"] }],
+    }),
+    { OPENAI_API_KEY: "test-only" },
+    { search: noCall, route: noCall },
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).recommendations[0].place.id, "saved");
+});
+
+test("empty route samples fall back to itinerary stops within the six-search budget", async (t) => {
+  mockSearchTool(
+    t,
+    "search_along_route",
+    { dayId: "day-1", query: "식당", insertIndex: null, originId: null, destinationId: null },
+    (result) => {
+      assert.equal(result.status, "ok");
+      assert.ok(result.searchBasis.includes(endpoint.name));
+    },
+  );
+  let searches = 0;
+  const response = await handleAiChat(
+    request(),
+    { OPENAI_API_KEY: "test-only" },
+    {
+      search: async (params) => {
+        searches++;
+        return Response.json({
+          places: Number(params.get("fromLng")) === endpoint.longitude ? [{ ...place, ...endpoint }] : [],
+        });
+      },
+      route: async () =>
+        Response.json({
+          path: [
+            [127, 35],
+            [127.5, 35],
+            [128, 35],
+            [128.5, 35],
+          ],
+        }),
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.ok(searches > 1 && searches <= 6);
+  assert.equal((await response.json()).recommendations.length, 1);
+});
+
 test("server rejects malformed context and oversized input before any external call", async () => {
   const noCall = async () => {
     assert.fail("must not call a provider");
